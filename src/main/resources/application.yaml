@@ -1,0 +1,9 @@
+spring:
+  application:
+    name: loopa
+
+  profiles:
+    active: local
+
+server:
+  port: 8080
