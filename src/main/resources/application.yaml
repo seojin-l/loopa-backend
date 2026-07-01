@@ -16,3 +16,12 @@ management:
   endpoint:
     prometheus:
       enabled: true
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    display-request-duration: true
+    groups-order: desc
+    operations-sorter: method
+  api-docs:
+    path: /v3/api-docs
