@@ -51,7 +51,7 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             cd loopa-backend
-            git pull origin main
+            git pull origin develop
 
             cat > .env <<EOF
             DB_URL=${{ secrets.DB_URL }}
