@@ -1,0 +1,65 @@
+name: CD
+
+on:
+  push:
+    branches: [ develop ]
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  ECR_REGISTRY: 242777378795.dkr.ecr.ap-northeast-2.amazonaws.com
+  ECR_REPOSITORY: loopa-api
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 코드 체크아웃
+        uses: actions/checkout@v3
+
+      - name: Java 17 세팅
+        uses: actions/setup-java@v3
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Gradle 빌드
+        run: |
+          chmod +x gradlew
+          ./gradlew build -x test
+
+      - name: AWS 자격증명 설정
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: ECR 로그인
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Docker 이미지 빌드 & ECR push
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+      - name: EC2 배포
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd loopa-backend
+            git pull origin main
+
+            cat > .env <<EOF
+            DB_URL=${{ secrets.DB_URL }}
+            DB_USERNAME=${{ secrets.DB_USERNAME }}
+            DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+            EOF
+
+            aws ecr get-login-password --region ap-northeast-2 | docker login --username AWS --password-stdin 242777378795.dkr.ecr.ap-northeast-2.amazonaws.com
+
+            docker compose pull
+            docker compose up -d
