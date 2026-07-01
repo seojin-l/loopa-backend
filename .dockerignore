@@ -1,0 +1,9 @@
+.gradle/
+build/
+.git/
+.idea/
+*.md
+.gitignore
+application-local.yml
+application-local.yaml
+.env
