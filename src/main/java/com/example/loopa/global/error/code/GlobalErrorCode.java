@@ -9,6 +9,7 @@ import org.springframework.http.HttpStatus;
 public enum GlobalErrorCode implements BaseErrorCode {
 
     INVALID_INPUT_VALUE("COMMON_400", "잘못된 요청입니다.", HttpStatus.BAD_REQUEST),
+    VALIDATION_ERROR("COMMON_400_1", "입력값이 올바르지 않습니다.", HttpStatus.BAD_REQUEST),
     INTERNAL_SERVER_ERROR("COMMON_500", "서버 내부 오류가 발생했습니다.", HttpStatus.INTERNAL_SERVER_ERROR);
 
     private final String code;
