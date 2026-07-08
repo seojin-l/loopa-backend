@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.example.loopa.domain.auth.dto.request.LoginRequest;
 import com.example.loopa.domain.auth.dto.response.LoginResponse;
+import com.example.loopa.global.security.JwtProvider;
 
 import java.time.LocalDateTime;
 import java.util.Random;
@@ -30,6 +31,7 @@ public class AuthService {
     private final UserRepository userRepository;
     private final EmailVerificationRepository emailVerificationRepository;
     private final PasswordEncoder passwordEncoder;
+    private final JwtProvider jwtProvider;
 
     //인증번호 받기 눌렀을때
     @Transactional
@@ -122,12 +124,14 @@ public class AuthService {
     @Transactional(readOnly = true)
     public LoginResponse login(LoginRequest request){
         User user = userRepository.findByEmail(request.email())
-                .orElseThrow(()->new GeneralException(AuthErrorCode.LOGIN_FAILED));
+                .orElseThrow(()->new GeneralException(AuthErrorCode.LOGIN_FAILED));//이메일로 회원찾기
 
         if (!passwordEncoder.matches(request.password(), user.getPassword())) {
             throw new GeneralException(AuthErrorCode.LOGIN_FAILED);
-        }
-        return  new LoginResponse("로그인에 성공했습니다");
+        }//비번 불일치시 로그인 실패
+
+        String accessToken= jwtProvider.createAccessToken(user.getId(), user.getEmail());//성공 시 토큰 생성
+        return  new LoginResponse(accessToken);
     }
 
 }
