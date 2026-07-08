@@ -9,6 +9,8 @@ import com.example.loopa.global.response.ApiResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
+import com.example.loopa.domain.auth.dto.request.LoginRequest;
+import com.example.loopa.domain.auth.dto.response.LoginResponse;
 
 @RestController
 @RequestMapping
@@ -31,6 +33,12 @@ public class AuthController {
     @PostMapping("/signup")
     public ApiResponse<AuthMessageResponse> signup(@Valid @RequestBody SignupRequest request){
         return ApiResponse.success(authService.signup(request));
+    }
+
+    //로그인
+    @PostMapping("/login")
+    public ApiResponse<LoginResponse> login(@Valid @RequestBody LoginRequest request) {
+        return ApiResponse.success(authService.login(request));
     }
 }
 

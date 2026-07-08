@@ -16,6 +16,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.example.loopa.domain.auth.dto.request.LoginRequest;
+import com.example.loopa.domain.auth.dto.response.LoginResponse;
 
 import java.time.LocalDateTime;
 import java.util.Random;
@@ -95,7 +97,7 @@ public class AuthService {
             throw new GeneralException(AuthErrorCode.EMAIL_NOT_VERIFIED);
         }
 
-        //사용자 비번 암호화
+        //사용자 비번 암호
         String encodedPassword = passwordEncoder.encode(request.password());
 
         User user =new User(
@@ -114,6 +116,18 @@ public class AuthService {
         Random random =new Random();
         int number = random.nextInt(1_000_000);
         return  String.format("%06d",number);
+    }
+
+    //로그인
+    @Transactional(readOnly = true)
+    public LoginResponse login(LoginRequest request){
+        User user = userRepository.findByEmail(request.email())
+                .orElseThrow(()->new GeneralException(AuthErrorCode.LOGIN_FAILED));
+
+        if (!passwordEncoder.matches(request.password(), user.getPassword())) {
+            throw new GeneralException(AuthErrorCode.LOGIN_FAILED);
+        }
+        return  new LoginResponse("로그인에 성공했습니다");
     }
 
 }

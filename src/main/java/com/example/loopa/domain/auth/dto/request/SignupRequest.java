@@ -16,14 +16,14 @@ public record SignupRequest(
         @NotBlank(message = "비밀번호를 입력해주세요.")
         String password,
 
-        @NotBlank(message = "성별을 선택해주세요.")
+        @NotNull(message = "성별을 선택해주세요.")
         Gender gender,
 
         @NotNull(message = "나이를 입력해주세요.")
         @Min(value = 1, message = "나이는 1 이상이어야 합니다.")
         Integer age,
 
-        @NotBlank(message = "직업을 선택해주세요.")
+        @NotNull(message = "직업을 선택해주세요.")
         Job job
 ) {
 }
