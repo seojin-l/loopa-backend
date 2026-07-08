@@ -6,6 +6,8 @@ import com.example.loopa.domain.response.service.ResponseService;
 import com.example.loopa.global.response.ApiResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -18,11 +20,12 @@ public class ResponseController {
     // RESPONSE-01 응답 제출 (게스트 허용)
     // TODO: @CurrentUser 적용 후 교체
     @PostMapping
-    public ApiResponse<ResponseSubmitResponse> submit(
+    public ResponseEntity<ApiResponse<ResponseSubmitResponse>> submit(
             @RequestHeader(value = "X-User-Id", required = false) Long userId,
             @PathVariable Long surveyId,
             @Valid @RequestBody ResponseSubmitRequest request) {
 
-        return ApiResponse.success(responseService.submit(userId, surveyId, request));
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.success(responseService.submit(userId, surveyId, request)));
     }
 }
