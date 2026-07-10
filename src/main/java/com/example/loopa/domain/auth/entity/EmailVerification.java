@@ -13,28 +13,27 @@ import java.time.LocalDateTime;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class EmailVerification {
 
+    private static final int MAX_ATTEMPTS = 5;
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-
-    // 인증 받을 이메일
     @Column(nullable = false, length = 255)
     private String email;
 
-    // 인증번호
     @Column(nullable = false, length = 10)
     private String code;
 
-    // 인증목적
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private Purpose purpose;
 
-
-    // 인증 완료 여부
     @Column(nullable = false)
     private boolean verified;
+
+    @Column(name = "attempt_count", nullable = false)
+    private int attemptCount;
 
     @Column(name = "expires_at", nullable = false)
     private LocalDateTime expiresAt;
@@ -47,11 +46,25 @@ public class EmailVerification {
         this.code = code;
         this.purpose = purpose;
         this.verified = false;
+        this.attemptCount = 0;
         this.expiresAt = expiresAt;
     }
 
     public void verify() {
         this.verified = true;
+        this.expiresAt = LocalDateTime.now().plusMinutes(30);
+    }
+
+    public void incrementAttempt() {
+        this.attemptCount++;
+    }
+
+    public boolean isMaxAttemptExceeded() {
+        return this.attemptCount >= MAX_ATTEMPTS;
+    }
+
+    public void invalidate() {
+        this.expiresAt = LocalDateTime.now();
     }
 
     @PrePersist

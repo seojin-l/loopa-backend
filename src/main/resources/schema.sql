@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS email_verifications (
     code        VARCHAR(10)  NOT NULL COMMENT '인증번호',
     purpose     VARCHAR(20)  NOT NULL COMMENT '목적 SIGNUP/PASSWORD_RESET',
     verified    BOOLEAN      NOT NULL DEFAULT FALSE COMMENT '인증 완료 여부',
+    attempt_count INT        NOT NULL DEFAULT 0 COMMENT '인증 시도 횟수(최대 5)',
     expires_at  DATETIME     NOT NULL COMMENT '만료일시',
     created_at  DATETIME     NOT NULL COMMENT '생성일시',
     PRIMARY KEY (id),

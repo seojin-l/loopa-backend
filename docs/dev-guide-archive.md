@@ -597,19 +597,15 @@ WHERE 절 자체가 달라지므로, 하나의 Repository 메서드로 합치기
 
 ---
 
-## 8. @CurrentUser 임시 처리
+## 8. 회원 식별 — @AuthenticationPrincipal
 
-다른 도메인과 동일하게 `@RequestHeader("X-User-Id")`로 임시 처리중입니다.
+JWT 인증이 완성되어, 컨트롤러에서 회원 식별은 `@AuthenticationPrincipal`로 합니다:
 
 ```java
-// 현재 (임시)
-@RequestHeader("X-User-Id") Long userId
-
-// 나중에 (이서진님 JWT 완성 후)
-@CurrentUser Long userId
+@AuthenticationPrincipal Long userId
 ```
 
-Archive의 6개 API는 전부 회원 전용입니다 (게스트 허용 없음). 아카이브 열람에 토큰이 필요하고, 공유에도 본인 확인이 필요하기 때문입니다. 그래서 `required = false`가 아니라 `required = true`(기본값)로 설정되어 있습니다.
+Archive의 6개 API는 전부 회원 전용입니다 (게스트 허용 없음). SecurityConfig에서 `authenticated()`로 설정되어 있어서, JWT 없이 접근하면 401 에러가 반환됩니다.
 
 ---
 

@@ -19,4 +19,6 @@ public interface EmailVerificationRepository extends JpaRepository<EmailVerifica
             Purpose purpose,
             LocalDateTime now
     );
+
+    void deleteAllByEmailAndPurpose(String email, Purpose purpose);
 }

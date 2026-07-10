@@ -344,16 +344,12 @@ if (respondentCount >= 50) {
 
 ---
 
-## 7. @CurrentUser 임시 처리
+## 7. 회원 식별 — @AuthenticationPrincipal
 
-Survey 도메인과 동일하게 `@RequestHeader("X-User-Id")`로 임시 처리중입니다.
+JWT 인증이 완성되어, 컨트롤러에서 회원 식별은 `@AuthenticationPrincipal`로 합니다:
 
 ```java
-// 현재 (임시) — 게스트 허용이라 required=false
-@RequestHeader(value = "X-User-Id", required = false) Long userId
-
-// 나중에 (이서진님 JWT 완성 후)
-@CurrentUser Long userId    // null이면 게스트
+@AuthenticationPrincipal Long userId    // null이면 게스트
 ```
 
-이 API는 게스트 허용이라 헤더가 없어도 됩니다. 없으면 `userId = null` → 게스트로 분기.
+이 API는 게스트 허용(`permitAll`)이라 JWT가 없어도 됩니다. 없으면 `userId = null` → 게스트로 분기합니다.

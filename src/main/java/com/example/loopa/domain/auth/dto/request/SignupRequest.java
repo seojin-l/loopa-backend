@@ -6,6 +6,7 @@ import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 
 public record SignupRequest(
 
@@ -14,6 +15,7 @@ public record SignupRequest(
         String email,
 
         @NotBlank(message = "비밀번호를 입력해주세요.")
+        @Size(min = 8, message = "비밀번호는 8자 이상이어야 합니다.")
         String password,
 
         @NotNull(message = "성별을 선택해주세요.")

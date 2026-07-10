@@ -276,19 +276,17 @@ Spring Data JPA의 메서드 이름 규칙(`findByIsDeletedFalseAndEndDateGreate
 
 ---
 
-## 6. @CurrentUser 임시 처리
+## 6. 회원 식별 — @AuthenticationPrincipal
 
-이서진님의 JWT/SecurityConfig가 완성되기 전이라, 회원 식별을 임시로 HTTP 헤더로 받고 있습니다:
+JWT 인증이 완성되어, 컨트롤러에서 회원 식별은 `@AuthenticationPrincipal`로 합니다:
 
 ```java
-// 현재 (임시)
-@RequestHeader("X-User-Id") Long userId
-
-// 나중에 (이서진님 JWT 완성 후)
-@CurrentUser Long userId
+@PostMapping
+public ResponseEntity<ApiResponse<SurveyCreateResponse>> create(
+        @AuthenticationPrincipal Long userId, ...) { ... }
 ```
 
-테스트할 때 Swagger나 Postman에서 `X-User-Id: 1` 헤더를 넣으면 회원 1번으로 동작합니다. 게스트 허용 API(목록, 상세, 문항)는 이 헤더 없이도 동작합니다 (`required = false`).
+Spring Security의 `JwtAuthenticationFilter`가 JWT에서 userId를 추출해서 `SecurityContext`에 저장하고, `@AuthenticationPrincipal`이 그 값을 자동으로 주입합니다. 게스트 허용 API(목록, 상세, 문항, 응답 제출)에서는 JWT가 없으면 userId가 `null`로 들어옵니다.
 
 ---
 
