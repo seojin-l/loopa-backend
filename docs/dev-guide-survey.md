@@ -155,8 +155,8 @@ if (!req.endDate().isAfter(req.startDate()))  → SURVEY_002
 // 2. 문항이 1개 이상인지
 if (req.questions().isEmpty())  → SURVEY_003
 
-// 3. 객관식 문항에 보기가 1개 이상인지
-if (type == MULTIPLE_CHOICE && options.isEmpty())  → SURVEY_004
+// 3. 객관식 문항에 보기가 2개 이상인지
+if (type == MULTIPLE_CHOICE && options.size() < 2)  → SURVEY_004
 
 // 4. 토큰 부족 (TokenService 내부에서 검증)
 if (잔액 - cost < 0)  → TOKEN_001
@@ -299,7 +299,7 @@ Spring Data JPA의 메서드 이름 규칙(`findByIsDeletedFalseAndEndDateGreate
 | 존재하지 않거나 삭제된 설문 조회 | SURVEY_001 | findSurveyOrThrow() |
 | 마감일 ≤ 시작일 | SURVEY_002 | create() 검증 |
 | 문항 0개 | SURVEY_003 | create() 검증 |
-| 객관식인데 보기 0개 | SURVEY_004 | create() 검증 |
+| 객관식인데 보기 2개 미만 | SURVEY_004 | create() 검증 |
 | 공유된 설문 삭제 시도 | SURVEY_005 | delete() 검증 |
 | 토큰 부족 | TOKEN_001 | TokenService.record() 내부 |
 | 남의 설문 삭제 시도 | COMMON_403 | delete() 검증 |

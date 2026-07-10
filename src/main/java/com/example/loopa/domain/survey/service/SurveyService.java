@@ -135,7 +135,7 @@ public class SurveyService {
             }
 
             if (type == QuestionType.MULTIPLE_CHOICE) {
-                if (qr.options() == null || qr.options().isEmpty()) {
+                if (qr.options() == null || qr.options().size() < 2) {
                     throw new GeneralException(SurveyErrorCode.NO_OPTIONS_FOR_MC);
                 }
                 mc++;
