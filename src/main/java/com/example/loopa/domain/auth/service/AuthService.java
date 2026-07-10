@@ -4,6 +4,7 @@ import com.example.loopa.domain.auth.dto.request.EmailVerificationSendRequest;
 import com.example.loopa.domain.auth.dto.request.EmailVerificationVerifyRequest;
 import com.example.loopa.domain.auth.dto.request.LoginRequest;
 import com.example.loopa.domain.auth.dto.request.LogoutRequest;
+import com.example.loopa.domain.auth.dto.request.PasswordResetRequest;
 import com.example.loopa.domain.auth.dto.request.SignupRequest;
 import com.example.loopa.domain.auth.dto.request.TokenRefreshRequest;
 import com.example.loopa.domain.auth.dto.response.AuthMessageResponse;
@@ -17,9 +18,11 @@ import com.example.loopa.domain.auth.repository.RefreshTokenRepository;
 import com.example.loopa.domain.user.entity.User;
 import com.example.loopa.domain.user.repository.UserRepository;
 import com.example.loopa.global.error.code.AuthErrorCode;
+import com.example.loopa.global.error.code.GlobalErrorCode;
 import com.example.loopa.global.error.exception.GeneralException;
 import com.example.loopa.global.security.JwtProvider;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -40,62 +43,69 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtProvider jwtProvider;
     private final RefreshTokenRepository refreshTokenRepository;
-    private final EmailService emailService;
+    private final ApplicationEventPublisher eventPublisher;
+    private final EmailVerificationFailHandler emailVerificationFailHandler;
 
     @Transactional
-    public AuthMessageResponse sendSignupEmailVerification(EmailVerificationSendRequest request) {
+    public AuthMessageResponse sendEmailVerification(EmailVerificationSendRequest request) {
+        Purpose purpose = parsePurpose(request.purpose());
         String email = request.email();
 
-        if (userRepository.existsByEmail(email)) {
+        if (purpose == Purpose.SIGNUP && userRepository.existsByEmail(email)) {
             throw new GeneralException(AuthErrorCode.ALREADY_EXISTS);
         }
 
-        emailVerificationRepository.findTopByEmailAndPurposeOrderByCreatedAtDesc(email, Purpose.SIGNUP)
+        if (purpose == Purpose.PASSWORD_RESET && !userRepository.existsByEmail(email)) {
+            throw new GeneralException(AuthErrorCode.EMAIL_NOT_REGISTERED);
+        }
+
+        emailVerificationRepository.findTopByEmailAndPurposeOrderByCreatedAtDesc(email, purpose)
                 .ifPresent(latest -> {
                     if (latest.getCreatedAt().isAfter(LocalDateTime.now().minusMinutes(1))) {
                         throw new GeneralException(AuthErrorCode.EMAIL_RATE_LIMITED);
                     }
                 });
 
-        emailVerificationRepository.deleteAllByEmailAndPurpose(email, Purpose.SIGNUP);
+        emailVerificationRepository.deleteAllByEmailAndPurpose(email, purpose);
 
         String code = createVerificationCode();
 
         EmailVerification emailVerification = new EmailVerification(
                 email,
                 code,
-                Purpose.SIGNUP,
+                purpose,
                 LocalDateTime.now().plusMinutes(10)
         );
 
         emailVerificationRepository.save(emailVerification);
 
-        emailService.sendVerificationCode(email, code);
+        eventPublisher.publishEvent(new VerificationCodeCreatedEvent(email, code));
 
         return new AuthMessageResponse("인증번호가 발송되었습니다");
     }
 
     @Transactional
-    public AuthMessageResponse verifySignupEmail(EmailVerificationVerifyRequest request) {
+    public AuthMessageResponse verifyEmail(EmailVerificationVerifyRequest request) {
+        Purpose purpose = parsePurpose(request.purpose());
+
         EmailVerification emailVerification = emailVerificationRepository
-                .findTopByEmailAndPurposeOrderByCreatedAtDesc(
-                        request.email(), Purpose.SIGNUP
-                )
+                .findTopByEmailAndPurposeOrderByCreatedAtDesc(request.email(), purpose)
                 .orElseThrow(() -> new GeneralException(AuthErrorCode.VERIFICATION_CODE_MISMATCH));
 
-        if (emailVerification.getExpiresAt().isBefore(LocalDateTime.now())) {
-            throw new GeneralException(AuthErrorCode.VERIFICATION_CODE_EXPIRED);
+        if (emailVerification.isVerified()) {
+            return new AuthMessageResponse("인증번호가 일치합니다");
         }
 
         if (emailVerification.isMaxAttemptExceeded()) {
             throw new GeneralException(AuthErrorCode.VERIFICATION_ATTEMPT_EXCEEDED);
         }
 
+        if (emailVerification.isExpiredOrInvalidated()) {
+            throw new GeneralException(AuthErrorCode.VERIFICATION_CODE_EXPIRED);
+        }
+
         if (!emailVerification.getCode().equals(request.code())) {
-            emailVerification.incrementAttempt();
-            if (emailVerification.isMaxAttemptExceeded()) {
-                emailVerification.invalidate();
-            }
+            emailVerificationFailHandler.recordFailedAttempt(emailVerification.getId());
             throw new GeneralException(AuthErrorCode.VERIFICATION_CODE_MISMATCH);
         }
 
@@ -139,6 +149,14 @@ public class AuthService {
     private String createVerificationCode() {
         int number = SECURE_RANDOM.nextInt(1_000_000);
         return String.format("%06d", number);
+    }
+
+    private Purpose parsePurpose(String purpose) {
+        try {
+            return Purpose.valueOf(purpose);
+        } catch (IllegalArgumentException e) {
+            throw new GeneralException(GlobalErrorCode.INVALID_INPUT_VALUE);
+        }
     }
 
     @Transactional
@@ -210,5 +228,27 @@ public class AuthService {
         refreshTokenRepository.delete(savedRefreshToken);
 
         return new AuthMessageResponse("로그아웃되었습니다.");
+    }
+
+    @Transactional
+    public AuthMessageResponse resetPassword(PasswordResetRequest request) {
+        boolean verified = emailVerificationRepository.existsByEmailAndPurposeAndVerifiedTrueAndExpiresAtAfter(
+                request.email(),
+                Purpose.PASSWORD_RESET,
+                LocalDateTime.now()
+        );
+
+        if (!verified) {
+            throw new GeneralException(AuthErrorCode.EMAIL_NOT_VERIFIED);
+        }
+
+        User user = userRepository.findByEmail(request.email())
+                .orElseThrow(() -> new GeneralException(AuthErrorCode.EMAIL_NOT_REGISTERED));
+
+        user.updatePassword(passwordEncoder.encode(request.newPassword()));
+
+        emailVerificationRepository.deleteAllByEmailAndPurpose(request.email(), Purpose.PASSWORD_RESET);
+
+        return new AuthMessageResponse("비밀번호가 변경되었습니다");
     }
 }

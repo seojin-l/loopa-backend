@@ -13,26 +13,26 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping
+@RequestMapping("/auth")
 @RequiredArgsConstructor
 public class AuthController {
 
     private final AuthService authService;
 
     @PostMapping("/email-verifications")
-    public ResponseEntity<ApiResponse<AuthMessageResponse>> sendSignupEmailVerification(
+    public ResponseEntity<ApiResponse<AuthMessageResponse>> sendEmailVerification(
             @Valid @RequestBody EmailVerificationSendRequest request) {
 
         return ResponseEntity.ok(ApiResponse.success(
-                authService.sendSignupEmailVerification(request)));
+                authService.sendEmailVerification(request)));
     }
 
     @PostMapping("/email-verifications/verify")
-    public ResponseEntity<ApiResponse<AuthMessageResponse>> verifySignupEmail(
+    public ResponseEntity<ApiResponse<AuthMessageResponse>> verifyEmail(
             @Valid @RequestBody EmailVerificationVerifyRequest request) {
 
         return ResponseEntity.ok(ApiResponse.success(
-                authService.verifySignupEmail(request)));
+                authService.verifyEmail(request)));
     }
 
     @PostMapping("/signup")
@@ -63,5 +63,11 @@ public class AuthController {
 
         return ResponseEntity.ok(ApiResponse.success(authService.logout(request)));
     }
-}
 
+    @PostMapping("/password/reset")
+    public ResponseEntity<ApiResponse<AuthMessageResponse>> resetPassword(
+            @Valid @RequestBody PasswordResetRequest request) {
+
+        return ResponseEntity.ok(ApiResponse.success(authService.resetPassword(request)));
+    }
+}

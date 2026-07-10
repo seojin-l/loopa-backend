@@ -48,7 +48,7 @@ public class ArchiveService {
                                                             Long cursor, int size) {
         Category cat = parseCategory(category);
 
-        List<Survey> surveys = surveyRepository.findArchiveList(cat, keyword, cursor, size + 1);
+        List<Survey> surveys = surveyRepository.findArchiveList(cat == null ? null : cat.name(), keyword, cursor, size + 1);
 
         boolean hasNext = surveys.size() > size;
         List<Survey> page = hasNext ? surveys.subList(0, size) : surveys;

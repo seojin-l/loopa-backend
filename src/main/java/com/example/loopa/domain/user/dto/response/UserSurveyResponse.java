@@ -27,7 +27,7 @@ public record UserSurveyResponse(
                 survey.getEndDate(),
                 survey.getTarget(),
                 survey.getCategory(),
-                survey.isClosed() ? "종료" : "진행 중",
+                survey.isClosed() ? "CLOSED" : "IN_PROGRESS",
                 sharedToArchive,
                 !sharedToArchive,
                 respondentCount
