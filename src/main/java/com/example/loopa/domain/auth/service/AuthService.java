@@ -7,6 +7,7 @@ import com.example.loopa.domain.auth.dto.response.AuthMessageResponse;
 import com.example.loopa.domain.auth.entity.EmailVerification;
 import com.example.loopa.domain.auth.entity.Purpose;
 import com.example.loopa.domain.auth.repository.EmailVerificationRepository;
+import com.example.loopa.domain.auth.repository.RefreshTokenRepository;
 import com.example.loopa.domain.user.entity.User;
 import com.example.loopa.domain.user.repository.UserRepository;
 import com.example.loopa.global.config.PasswordConfig;
@@ -19,6 +20,12 @@ import org.springframework.transaction.annotation.Transactional;
 import com.example.loopa.domain.auth.dto.request.LoginRequest;
 import com.example.loopa.domain.auth.dto.response.LoginResponse;
 import com.example.loopa.global.security.JwtProvider;
+import com.example.loopa.domain.auth.dto.request.LogoutRequest;
+import com.example.loopa.domain.auth.dto.request.TokenRefreshRequest;
+import com.example.loopa.domain.auth.dto.response.TokenRefreshResponse;
+import com.example.loopa.domain.auth.entity.RefreshToken;
+import com.example.loopa.domain.auth.repository.RefreshTokenRepository;
+import java.time.Duration;
 
 import java.time.LocalDateTime;
 import java.util.Random;
@@ -32,6 +39,7 @@ public class AuthService {
     private final EmailVerificationRepository emailVerificationRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtProvider jwtProvider;
+    private final RefreshTokenRepository refreshTokenRepository;
 
     //인증번호 받기 눌렀을때
     @Transactional
@@ -121,7 +129,7 @@ public class AuthService {
     }
 
     //로그인
-    @Transactional(readOnly = true)
+    @Transactional
     public LoginResponse login(LoginRequest request){
         User user = userRepository.findByEmail(request.email())
                 .orElseThrow(()->new GeneralException(AuthErrorCode.LOGIN_FAILED));//이메일로 회원찾기
@@ -131,7 +139,67 @@ public class AuthService {
         }//비번 불일치시 로그인 실패
 
         String accessToken= jwtProvider.createAccessToken(user.getId(), user.getEmail());//성공 시 토큰 생성
-        return  new LoginResponse(accessToken);
+        String refreshToken= jwtProvider.createRefreshToken(user.getId(),user.getEmail());
+
+        //한계정당 refreshToken 하나만 유지
+        refreshTokenRepository.deleteAllByUser(user);
+
+        RefreshToken savedRefreshToken=new RefreshToken(
+                user,
+                refreshToken,
+                LocalDateTime.now().plus(Duration.ofMillis(jwtProvider.getRefreshTokenExpiration()))
+        );
+        refreshTokenRepository.save(savedRefreshToken);
+
+        return  new LoginResponse(accessToken, refreshToken);
+    }
+
+    //refresh 매서드
+    @Transactional(readOnly = true)
+    public TokenRefreshResponse refresh(TokenRefreshRequest request) {
+        String refreshToken = request.refreshToken();
+
+        if (!jwtProvider.validateToken(refreshToken)) {
+            throw new GeneralException(AuthErrorCode.INVALID_REFRESH_TOKEN);
+        }
+
+        if (!jwtProvider.isRefreshToken(refreshToken)) {
+            throw new GeneralException(AuthErrorCode.INVALID_REFRESH_TOKEN);
+        }
+
+        RefreshToken savedRefreshToken = refreshTokenRepository.findByToken(refreshToken)
+                .orElseThrow(() -> new GeneralException(AuthErrorCode.INVALID_REFRESH_TOKEN));
+
+        if (savedRefreshToken.isExpired()) {
+            throw new GeneralException(AuthErrorCode.EXPIRED_REFRESH_TOKEN);
+        }
+
+        User user = savedRefreshToken.getUser();
+
+        String newAccessToken = jwtProvider.createAccessToken(user.getId(), user.getEmail());
+
+        return new TokenRefreshResponse(newAccessToken);
+    }
+
+    //logout매서드
+    @Transactional
+    public AuthMessageResponse logout(LogoutRequest request) {
+        String refreshToken = request.refreshToken();
+
+        if (!jwtProvider.validateToken(refreshToken)) {
+            throw new GeneralException(AuthErrorCode.INVALID_REFRESH_TOKEN);
+        }
+
+        if (!jwtProvider.isRefreshToken(refreshToken)) {
+            throw new GeneralException(AuthErrorCode.INVALID_REFRESH_TOKEN);
+        }
+
+        RefreshToken savedRefreshToken = refreshTokenRepository.findByToken(refreshToken)
+                .orElseThrow(() -> new GeneralException(AuthErrorCode.INVALID_REFRESH_TOKEN));
+
+        refreshTokenRepository.delete(savedRefreshToken);
+
+        return new AuthMessageResponse("로그아웃되었습니다.");
     }
 
 }

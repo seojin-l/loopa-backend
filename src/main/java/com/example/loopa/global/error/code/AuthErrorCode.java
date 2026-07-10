@@ -18,6 +18,7 @@ public enum AuthErrorCode implements BaseErrorCode {
     EXPIRED_REFRESH_TOKEN("AUTH_008", "만료된 리프레시 토큰입니다.", HttpStatus.UNAUTHORIZED);
 
 
+
     private final String code;
     private final String message;
     private final HttpStatus status;

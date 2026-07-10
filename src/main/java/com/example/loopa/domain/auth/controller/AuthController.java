@@ -11,6 +11,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 import com.example.loopa.domain.auth.dto.request.LoginRequest;
 import com.example.loopa.domain.auth.dto.response.LoginResponse;
+import com.example.loopa.domain.auth.dto.request.LogoutRequest;
+import com.example.loopa.domain.auth.dto.request.TokenRefreshRequest;
+import com.example.loopa.domain.auth.dto.response.TokenRefreshResponse;
 
 @RestController
 @RequestMapping
@@ -39,6 +42,20 @@ public class AuthController {
     @PostMapping("/login")
     public ApiResponse<LoginResponse> login(@Valid @RequestBody LoginRequest request) {
         return ApiResponse.success(authService.login(request));
+    }
+
+    @PostMapping("/token/refresh")
+    public ApiResponse<TokenRefreshResponse> refresh(
+            @Valid @RequestBody TokenRefreshRequest request
+    ) {
+        return ApiResponse.success(authService.refresh(request));
+    }
+
+    @PostMapping("/logout")
+    public ApiResponse<AuthMessageResponse> logout(
+            @Valid @RequestBody LogoutRequest request
+    ) {
+        return ApiResponse.success(authService.logout(request));
     }
 }
 
