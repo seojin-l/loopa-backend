@@ -231,8 +231,20 @@ public class AuthService {
         User user = savedRefreshToken.getUser();
 
         String newAccessToken = jwtProvider.createAccessToken(user.getId(), user.getEmail());
+        String newRefreshToken = jwtProvider.createRefreshToken(user.getId(), user.getEmail());
 
-        return new TokenRefreshResponse(newAccessToken);
+        refreshTokenRepository.delete(savedRefreshToken);
+        refreshTokenRepository.flush();
+
+        RefreshToken rotatedRefreshToken = new RefreshToken(
+                user,
+                newRefreshToken,
+                LocalDateTime.now().plus(Duration.ofMillis(jwtProvider.getRefreshTokenExpiration()))
+        );
+
+        refreshTokenRepository.save(rotatedRefreshToken);
+
+        return new TokenRefreshResponse("Bearer", newAccessToken, newRefreshToken);
     }
 
     @Transactional
