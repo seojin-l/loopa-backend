@@ -38,7 +38,10 @@ public class SecurityConfig {
                                 "/signup",
                                 "/login",
                                 "/token/refresh",
-                                "/logout"
+                                "/logout",
+                                "/password-reset/email-verifications",
+                                "/password-reset/email-verifications/verify",
+                                "/password/reset"
                         ).permitAll()
                         .requestMatchers("/users/**").authenticated()
                         .anyRequest().permitAll()
