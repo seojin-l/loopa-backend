@@ -25,13 +25,21 @@ public class SecurityConfig {
                 .formLogin(AbstractHttpConfigurer::disable)
                 .httpBasic(AbstractHttpConfigurer::disable)
                 .sessionManagement(session->session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .logout(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(
                                 "/swagger-ui/**",
                                 "/swagger-ui.html",
                                 "/v3/api-docs/**"
                         ).permitAll()
-                        .requestMatchers("/auth/**").permitAll()
+                        .requestMatchers(
+                                "/email-verifications",
+                                "/email-verifications/verify",
+                                "/signup",
+                                "/login",
+                                "/token/refresh",
+                                "/logout"
+                        ).permitAll()
                         .requestMatchers("/users/me").authenticated()
                         .anyRequest().permitAll()
                 )
