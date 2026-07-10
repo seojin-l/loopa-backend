@@ -58,10 +58,14 @@ public class AuthController {
     }
 
     @PostMapping("/logout")
-    public ResponseEntity<ApiResponse<AuthMessageResponse>> logout(
-            @Valid @RequestBody LogoutRequest request) {
+    public ResponseEntity<ApiResponse<Void>> logout(
+            @Valid @RequestBody LogoutRequest request
+    ) {
+        authService.logout(request);
 
-        return ResponseEntity.ok(ApiResponse.success(authService.logout(request)));
+        return ResponseEntity.ok(
+                ApiResponse.success("로그아웃되었습니다.")
+        );
     }
 
     @PostMapping("/password/reset")

@@ -181,7 +181,7 @@ public class AuthService {
         );
         refreshTokenRepository.save(savedRefreshToken);
 
-        return new LoginResponse(accessToken, refreshToken);
+        return new LoginResponse(user.getId(), user.getEmail(), "Bearer", accessToken, refreshToken);
     }
 
     @Transactional
@@ -211,7 +211,7 @@ public class AuthService {
     }
 
     @Transactional
-    public AuthMessageResponse logout(LogoutRequest request) {
+    public void logout(LogoutRequest request) {
         String refreshToken = request.refreshToken();
 
         if (!jwtProvider.validateToken(refreshToken)) {
@@ -226,8 +226,6 @@ public class AuthService {
                 .orElseThrow(() -> new GeneralException(AuthErrorCode.INVALID_REFRESH_TOKEN));
 
         refreshTokenRepository.delete(savedRefreshToken);
-
-        return new AuthMessageResponse("로그아웃되었습니다.");
     }
 
     @Transactional

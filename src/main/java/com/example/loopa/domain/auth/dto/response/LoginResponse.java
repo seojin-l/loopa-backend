@@ -1,7 +1,10 @@
 package com.example.loopa.domain.auth.dto.response;
 
 public record LoginResponse(
-    String accessToken,
-    String refreshToken
+        Long userId,
+        String email,
+        String tokenType,
+        String accessToken,
+        String refreshToken
 ) {
 }
