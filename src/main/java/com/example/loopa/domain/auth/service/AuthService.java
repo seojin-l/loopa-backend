@@ -48,7 +48,7 @@ public class AuthService {
 
         //이미 가입된 이메일인지 확인
         if (userRepository.existsByEmail(email)){
-            throw new GeneralException(AuthErrorCode.EMAIL_ALREADY_EXISTS);
+            throw new GeneralException(AuthErrorCode.ALREADY_EXISTS);
         }
 
         //인증번호 생성
@@ -74,15 +74,15 @@ public class AuthService {
                 .findTopByEmailAndPurposeOrderByCreatedAtDesc(
                         request.email(), Purpose.SIGNUP
                 )//발송내역없으면 예외
-                .orElseThrow(()-> new GeneralException(AuthErrorCode.EMAIL_VERIFICATION_NOT_FOUND));
+                .orElseThrow(()-> new GeneralException(AuthErrorCode.VERIFICATION_CODE_MISMATCH));
         //인증번호 만료 시 예외
         if (emailVerification.getExpiresAt().isBefore(LocalDateTime.now())){
-            throw new GeneralException(AuthErrorCode.EMAIL_VERIFICATION_EXPIRED);
+            throw new GeneralException(AuthErrorCode.VERIFICATION_CODE_EXPIRED);
         }
 
         //인증번호 불일치 시 예외
         if (!emailVerification.getCode().equals(request.code())) {
-            throw new GeneralException(AuthErrorCode.EMAIL_VERIFICATION_CODE_NOT_MATCH);
+            throw new GeneralException(AuthErrorCode.VERIFICATION_CODE_MISMATCH);
         }
         emailVerification.verify();
 
@@ -94,7 +94,7 @@ public class AuthService {
     public AuthMessageResponse signup(SignupRequest request){
         //중복검사
         if (userRepository.existsByEmail(request.email())){
-            throw new GeneralException(AuthErrorCode.EMAIL_ALREADY_EXISTS);
+            throw new GeneralException(AuthErrorCode.ALREADY_EXISTS);
         }
 
         boolean verified = emailVerificationRepository.existsByEmailAndPurposeAndVerifiedTrueAndExpiresAtAfter(
