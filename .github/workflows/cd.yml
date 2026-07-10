@@ -57,6 +57,9 @@ jobs:
             DB_URL=${{ secrets.DB_URL }}
             DB_USERNAME=${{ secrets.DB_USERNAME }}
             DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+            JWT_SECRET=${{ secrets.JWT_SECRET }} 
+            MAIL_USERNAME=${{ secrets.MAIL_USERNAME }}
+            MAIL_PASSWORD=${{ secrets.MAIL_PASSWORD }}
             EOF
 
             aws ecr get-login-password --region ap-northeast-2 | docker login --username AWS --password-stdin 242777378795.dkr.ecr.ap-northeast-2.amazonaws.com
