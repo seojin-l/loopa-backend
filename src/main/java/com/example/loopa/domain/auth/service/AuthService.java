@@ -10,7 +10,6 @@ import com.example.loopa.domain.auth.repository.EmailVerificationRepository;
 import com.example.loopa.domain.auth.repository.RefreshTokenRepository;
 import com.example.loopa.domain.user.entity.User;
 import com.example.loopa.domain.user.repository.UserRepository;
-import com.example.loopa.global.config.PasswordConfig;
 import com.example.loopa.global.error.code.AuthErrorCode;
 import com.example.loopa.global.error.exception.GeneralException;
 import lombok.RequiredArgsConstructor;
@@ -24,7 +23,6 @@ import com.example.loopa.domain.auth.dto.request.LogoutRequest;
 import com.example.loopa.domain.auth.dto.request.TokenRefreshRequest;
 import com.example.loopa.domain.auth.dto.response.TokenRefreshResponse;
 import com.example.loopa.domain.auth.entity.RefreshToken;
-import com.example.loopa.domain.auth.repository.RefreshTokenRepository;
 import java.time.Duration;
 
 import java.time.LocalDateTime;
@@ -40,6 +38,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtProvider jwtProvider;
     private final RefreshTokenRepository refreshTokenRepository;
+    private final EmailService emailService;
 
     //인증번호 받기 눌렀을때
     @Transactional
@@ -63,7 +62,8 @@ public class AuthService {
 
         emailVerificationRepository.save(emailVerification);
 
-        System.out.println("회원가입 인증번호 email =" + email + ",code=" + code);
+        emailService.sendVerificationCode(email, code);
+
         return new AuthMessageResponse("인증번호가 발송되었습니다");
     }
 
