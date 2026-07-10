@@ -5,6 +5,18 @@ spring:
   profiles:
     active: local
 
+#  mail:
+  #  host: smtp.gmail.com
+   # port: 587
+   # username: ${MAIL_USERNAME}
+   # password: ${MAIL_PASSWORD}
+    #properties:
+    #  mail:
+      #  smtp:
+       #   auth: true
+        #  starttls:
+           # enable: true
+
 server:
   port: 8080
 
@@ -25,3 +37,7 @@ springdoc:
     operations-sorter: method
   api-docs:
     path: /v3/api-docs
+
+jwt:
+  secret: ${JWT_SECRET}
+  access-token-expiration: 3600000

@@ -17,9 +17,11 @@ public class User {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    //이메일
     @Column(nullable = false, unique = true, length = 255)
     private String email;
 
+    //비밀번호
     @Column(nullable = false, length = 255)
     private String password;
 
@@ -56,9 +58,11 @@ public class User {
         this.password = password;
     }
 
+
     public void updateTokenBalance(int balance) {
         this.tokenBalance = balance;
     }
+
 
     @PrePersist
     protected void onCreate() {
