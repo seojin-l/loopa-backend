@@ -14,6 +14,8 @@ import com.example.loopa.domain.auth.dto.response.LoginResponse;
 import com.example.loopa.domain.auth.dto.request.LogoutRequest;
 import com.example.loopa.domain.auth.dto.request.TokenRefreshRequest;
 import com.example.loopa.domain.auth.dto.response.TokenRefreshResponse;
+import com.example.loopa.domain.auth.dto.request.PasswordResetRequest;
+
 
 @RestController
 @RequestMapping
@@ -56,6 +58,30 @@ public class AuthController {
             @Valid @RequestBody LogoutRequest request
     ) {
         return ApiResponse.success(authService.logout(request));
+    }
+
+    //비밀번호 찾기 인증번호 발송
+    @PostMapping("/password-reset/email-verifications")
+    public ApiResponse<AuthMessageResponse> sendPasswordResetEmailVerification(
+            @Valid @RequestBody EmailVerificationSendRequest request
+    ) {
+        return ApiResponse.success(authService.sendPasswordResetEmailVerification(request));
+    }
+
+    //비밀번호 찾기 인증번호 검증
+    @PostMapping("/password-reset/email-verifications/verify")
+    public ApiResponse<AuthMessageResponse> verifyPasswordResetEmail(
+            @Valid @RequestBody EmailVerificationVerifyRequest request
+    ) {
+        return ApiResponse.success(authService.verifyPasswordResetEmail(request));
+    }
+
+    //비밀번호 변경
+    @PostMapping("/password/reset")
+    public ApiResponse<AuthMessageResponse> resetPassword(
+            @Valid @RequestBody PasswordResetRequest request
+    ) {
+        return ApiResponse.success(authService.resetPassword(request));
     }
 }
 
