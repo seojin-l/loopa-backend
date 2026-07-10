@@ -17,6 +17,16 @@ public record ApiResponse<T> (
     public static <T> ApiResponse<T> success(String message, T result) {
         return new ApiResponse<>(true, "COMMON_200", message, result);
     }
+
+    public static ApiResponse<Void> success(String message) {
+        return new ApiResponse<>(
+                true,
+                "COMMON_200",
+                message,
+                null
+        );
+    }
+
     public static ApiResponse<Void> success(){
         return success(null);
     }
