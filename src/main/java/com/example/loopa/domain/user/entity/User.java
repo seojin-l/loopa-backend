@@ -12,6 +12,7 @@ import java.time.LocalDateTime;
 @Table(name = "users")
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class User {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -56,6 +57,12 @@ public class User {
     public void updatePassword(String password) {
         this.password = password;
     }
+
+
+    public void updateTokenBalance(int balance) {
+        this.tokenBalance = balance;
+    }
+
 
     @PrePersist
     protected void onCreate() {

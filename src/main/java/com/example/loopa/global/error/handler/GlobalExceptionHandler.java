@@ -3,6 +3,8 @@ package com.example.loopa.global.error.handler;
 import com.example.loopa.global.error.code.GlobalErrorCode;
 import com.example.loopa.global.error.exception.GeneralException;
 import com.example.loopa.global.response.ApiResponse;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -19,23 +21,23 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<ApiResponse<String>> handleValidationException(MethodArgumentNotValidException e) {
-        String message = e.getBindingResult()
-                .getFieldErrors()
-                .stream()
-                .findFirst()
-                .map(fieldError -> fieldError.getDefaultMessage())
-                .orElse(GlobalErrorCode.VALIDATION_ERROR.getMessage());
-
+    public ResponseEntity<ApiResponse<Void>> handleValidationException(MethodArgumentNotValidException e) {
         return ResponseEntity
-                .status(GlobalErrorCode.VALIDATION_ERROR.getStatus())
-                .body(ApiResponse.fail(GlobalErrorCode.VALIDATION_ERROR, message));
+                .status(HttpStatus.BAD_REQUEST)
+                .body(ApiResponse.fail(GlobalErrorCode.INVALID_INPUT_VALUE));
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ApiResponse<Void>> handleDataIntegrityViolation(DataIntegrityViolationException e) {
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .body(ApiResponse.fail(GlobalErrorCode.INVALID_INPUT_VALUE));
     }
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> handleException(Exception e) {
         return ResponseEntity
-                .status(GlobalErrorCode.INTERNAL_SERVER_ERROR.getStatus())
+                .status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(ApiResponse.fail(GlobalErrorCode.INTERNAL_SERVER_ERROR));
     }
 }

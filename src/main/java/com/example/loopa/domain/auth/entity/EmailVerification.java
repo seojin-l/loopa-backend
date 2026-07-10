@@ -17,6 +17,7 @@ public class EmailVerification {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+
     // 인증 받을 이메일
     @Column(nullable = false, length = 255)
     private String email;
@@ -30,9 +31,10 @@ public class EmailVerification {
     @Column(nullable = false, length = 20)
     private Purpose purpose;
 
+
     // 인증 완료 여부
     @Column(nullable = false)
-    private Boolean verified;
+    private boolean verified;
 
     @Column(name = "expires_at", nullable = false)
     private LocalDateTime expiresAt;
