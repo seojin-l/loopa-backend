@@ -23,6 +23,7 @@ import com.example.loopa.domain.auth.dto.request.LogoutRequest;
 import com.example.loopa.domain.auth.dto.request.TokenRefreshRequest;
 import com.example.loopa.domain.auth.dto.response.TokenRefreshResponse;
 import com.example.loopa.domain.auth.entity.RefreshToken;
+import com.example.loopa.domain.auth.dto.request.PasswordResetRequest;
 import java.time.Duration;
 
 import java.time.LocalDateTime;
@@ -43,50 +44,13 @@ public class AuthService {
     //인증번호 받기 눌렀을때
     @Transactional
     public AuthMessageResponse sendSignupEmailVerification(EmailVerificationSendRequest request) {
-        String email= request.email();
-
-        //이미 가입된 이메일인지 확인
-        if (userRepository.existsByEmail(email)){
-            throw new GeneralException(AuthErrorCode.ALREADY_EXISTS);
-        }
-
-        //인증번호 생성
-        String code=createVerificationCode();
-
-        EmailVerification emailVerification = new EmailVerification(
-                email,
-                code,
-                Purpose.SIGNUP,
-                LocalDateTime.now().plusMinutes(10)
-        );
-
-        emailVerificationRepository.save(emailVerification);
-
-        emailService.sendVerificationCode(email, code);
-
-        return new AuthMessageResponse("인증번호가 발송되었습니다");
+        return sendEmailVerification(request.email(), Purpose.SIGNUP);
     }
 
     //확인 눌렀을때
     @Transactional
     public AuthMessageResponse verifySignupEmail(EmailVerificationVerifyRequest request) {//가장 최근 인증번호 찾기
-        EmailVerification emailVerification=emailVerificationRepository
-                .findTopByEmailAndPurposeOrderByCreatedAtDesc(
-                        request.email(), Purpose.SIGNUP
-                )//발송내역없으면 예외
-                .orElseThrow(()-> new GeneralException(AuthErrorCode.VERIFICATION_CODE_MISMATCH));
-        //인증번호 만료 시 예외
-        if (emailVerification.getExpiresAt().isBefore(LocalDateTime.now())){
-            throw new GeneralException(AuthErrorCode.VERIFICATION_CODE_EXPIRED);
-        }
-
-        //인증번호 불일치 시 예외
-        if (!emailVerification.getCode().equals(request.code())) {
-            throw new GeneralException(AuthErrorCode.VERIFICATION_CODE_MISMATCH);
-        }
-        emailVerification.verify();
-
-        return new AuthMessageResponse("인증번호가 일치합니다");
+        return verifyEmail(request.email(), request.code(), Purpose.SIGNUP);
     }
 
     //회원가입 완료 눌렀을때
@@ -126,6 +90,69 @@ public class AuthService {
         Random random =new Random();
         int number = random.nextInt(1_000_000);
         return  String.format("%06d",number);
+    }
+
+    private AuthMessageResponse sendEmailVerification(
+            String email,
+            Purpose purpose
+    ) {
+        if (purpose == Purpose.SIGNUP && userRepository.existsByEmail(email)) {
+            throw new GeneralException(AuthErrorCode.ALREADY_EXISTS);
+        }
+
+        if (purpose == Purpose.PASSWORD_RESET && !userRepository.existsByEmail(email)) {
+            throw new GeneralException(AuthErrorCode.EMAIL_NOT_REGISTERED);
+        }
+
+        String code = createVerificationCode();
+
+        EmailVerification emailVerification = new EmailVerification(
+                email,
+                code,
+                purpose,
+                LocalDateTime.now().plusMinutes(10)
+        );
+
+        emailVerificationRepository.save(emailVerification);
+
+        emailService.sendVerificationCode(email, code);
+
+        return new AuthMessageResponse("인증번호가 발송되었습니다");
+    }
+
+    //인증번호 확인 공통 매서드
+    private AuthMessageResponse verifyEmail(
+            String email,
+            String code,
+            Purpose purpose
+    ) {
+        EmailVerification emailVerification = emailVerificationRepository
+                .findTopByEmailAndPurposeOrderByCreatedAtDesc(email, purpose)
+                .orElseThrow(() -> new GeneralException(AuthErrorCode.VERIFICATION_CODE_MISMATCH));
+
+        if (emailVerification.getExpiresAt().isBefore(LocalDateTime.now())) {
+            throw new GeneralException(AuthErrorCode.VERIFICATION_CODE_EXPIRED);
+        }
+
+        if (!emailVerification.getCode().equals(code)) {
+            throw new GeneralException(AuthErrorCode.VERIFICATION_CODE_MISMATCH);
+        }
+
+        emailVerification.verify();
+
+        return new AuthMessageResponse("인증번호가 일치합니다");
+    }
+
+    //비번찾기 이메일 인증번호 발송
+    @Transactional
+    public AuthMessageResponse sendPasswordResetEmailVerification(EmailVerificationSendRequest request) {
+        return sendEmailVerification(request.email(), Purpose.PASSWORD_RESET);
+    }
+
+    //비번찾기 인증번호 확인
+    @Transactional
+    public AuthMessageResponse verifyPasswordResetEmail(EmailVerificationVerifyRequest request) {
+        return verifyEmail(request.email(), request.code(), Purpose.PASSWORD_RESET);
     }
 
     //로그인
@@ -200,6 +227,32 @@ public class AuthService {
         refreshTokenRepository.delete(savedRefreshToken);
 
         return new AuthMessageResponse("로그아웃되었습니다.");
+    }
+
+    //비번 병경 매서드
+    @Transactional
+    public AuthMessageResponse resetPassword(PasswordResetRequest request) {
+        EmailVerification emailVerification = emailVerificationRepository
+                .findTopByEmailAndPurposeOrderByCreatedAtDesc(
+                        request.email(),
+                        Purpose.PASSWORD_RESET
+                )
+                .orElseThrow(() -> new GeneralException(AuthErrorCode.EMAIL_NOT_VERIFIED));
+
+        if (!emailVerification.isVerified()) {
+            throw new GeneralException(AuthErrorCode.EMAIL_NOT_VERIFIED);
+        }
+
+        if (emailVerification.getExpiresAt().isBefore(LocalDateTime.now())) {
+            throw new GeneralException(AuthErrorCode.VERIFICATION_CODE_EXPIRED);
+        }
+
+        User user = userRepository.findByEmail(request.email())
+                .orElseThrow(() -> new GeneralException(AuthErrorCode.EMAIL_NOT_REGISTERED));
+
+        user.updatePassword(passwordEncoder.encode(request.newPassword()));
+
+        return new AuthMessageResponse("비밀번호가 변경되었습니다");
     }
 
 }
