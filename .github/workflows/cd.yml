@@ -2,7 +2,7 @@ name: CD
 
 on:
   push:
-    branches: [ develop ]
+    branches: [ main ]
 
 env:
   AWS_REGION: ${{ secrets.AWS_REGION }}
@@ -51,7 +51,7 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             cd loopa-backend
-            git pull origin develop
+            git pull origin main
 
             cat > .env <<EOF
             DB_URL=${{ secrets.DB_URL }}

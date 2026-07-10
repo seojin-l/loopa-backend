@@ -27,3 +27,13 @@ out/
 .env
 application-local.yml
 application-local.yaml
+
+### Claude ###
+.claude/
+
+### Spec docs (로컬 참고용) ###
+loopa_api_full.md
+loopa_implementation.md
+
+### Images (서비스 화면 캡처, 로컬 참고용) ###
+images/

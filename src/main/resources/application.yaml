@@ -5,6 +5,18 @@ spring:
   profiles:
     active: local
 
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: ${MAIL_USERNAME}
+    password: ${MAIL_PASSWORD}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+
 server:
   port: 8080
 
@@ -16,3 +28,17 @@ management:
   endpoint:
     prometheus:
       enabled: true
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    display-request-duration: true
+    groups-order: desc
+    operations-sorter: method
+  api-docs:
+    path: /v3/api-docs
+
+jwt:
+  secret: ${JWT_SECRET}
+  access-token-expiration: 3600000 #1시간
+  refresh-token-expiration: 1209600000 #14일
