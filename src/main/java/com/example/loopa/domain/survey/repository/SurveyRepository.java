@@ -40,4 +40,5 @@ public interface SurveyRepository extends JpaRepository<Survey, Long> {
             "AND (:cursor IS NULL OR s.id < :cursor) " +
             "ORDER BY s.id DESC")
     List<Survey> findShareableSurveys(Long creatorId, LocalDate today, Long cursor, int size);
+    List<Survey> findByCreatorIdAndIsDeletedFalseOrderByIdDesc(Long creatorId);
 }
