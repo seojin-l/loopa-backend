@@ -15,7 +15,8 @@ public record UserSurveyResponse(
         String status,
         Boolean sharedToArchive,
         Boolean canDelete,
-        Long respondentCount
+        Long respondentCount,
+        String createdAt
 ) {
     public static UserSurveyResponse from(Survey survey, Long respondentCount) {
         boolean sharedToArchive = Boolean.TRUE.equals(survey.getSharedToArchive());
@@ -30,7 +31,8 @@ public record UserSurveyResponse(
                 survey.isClosed() ? "CLOSED" : "IN_PROGRESS",
                 sharedToArchive,
                 !sharedToArchive,
-                respondentCount
+                respondentCount,
+                survey.getCreatedAt().toLocalDate().toString()
         );
     }
 }
