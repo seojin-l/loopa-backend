@@ -23,4 +23,21 @@ public interface SurveyRepository extends JpaRepository<Survey, Long> {
             "ORDER BY s.id DESC")
     List<Survey> findSurveyList(LocalDate today, Long creatorId, Category category,
                                 String keyword, Long cursor, int size);
+
+    @Query("SELECT s FROM Survey s " +
+            "WHERE s.isDeleted = false " +
+            "AND s.sharedToArchive = true " +
+            "AND (:category IS NULL OR s.category = :category) " +
+            "AND (:keyword IS NULL OR s.title LIKE %:keyword%) " +
+            "AND (:cursor IS NULL OR s.id < :cursor) " +
+            "ORDER BY s.id DESC")
+    List<Survey> findArchiveList(Category category, String keyword, Long cursor, int size);
+
+    @Query("SELECT s FROM Survey s " +
+            "WHERE s.isDeleted = false " +
+            "AND s.creator.id = :creatorId " +
+            "AND s.endDate < :today " +
+            "AND (:cursor IS NULL OR s.id < :cursor) " +
+            "ORDER BY s.id DESC")
+    List<Survey> findShareableSurveys(Long creatorId, LocalDate today, Long cursor, int size);
 }

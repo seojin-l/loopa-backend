@@ -156,7 +156,7 @@ INTERNAL_SERVER_ERROR("COMMON_500", "서버 에러가 발생했습니다.", Http
 | SURVEY_NOT_FOUND | SURVEY_001 | 존재하지 않는 설문 | 삭제되었거나 없는 설문 ID로 조회할 때 |
 | INVALID_DATE_RANGE | SURVEY_002 | 마감일이 시작일보다 앞섬 | 설문 생성 시 날짜 검증 |
 | NO_QUESTIONS | SURVEY_003 | 문항이 0개 | 설문 생성 시 문항 검증 |
-| NO_OPTIONS_FOR_MC | SURVEY_004 | 객관식인데 보기 없음 | 설문 생성 시 보기 검증 |
+| NO_OPTIONS_FOR_MC | SURVEY_004 | 객관식인데 보기 2개 미만 | 설문 생성 시 보기 검증 |
 | SHARED_SURVEY_DELETE | SURVEY_005 | 공유된 설문 삭제 시도 | 아카이브에 공유된 설문을 삭제하려 할 때 |
 
 **없으면?** Service 코드에서 에러를 던질 때마다 직접 HTTP 상태코드와 메시지를 하드코딩해야 합니다. "이 에러가 409야 400이야?" 같은 혼란이 생기고, API 명세와 실제 코드가 어긋나기 쉽습니다.
