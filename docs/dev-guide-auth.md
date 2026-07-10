@@ -51,7 +51,7 @@ JWT(JSON Web Token)는 **서버가 발급한 신분증**입니다.
 |--|-----------|-------------|
 | 용도 | API 호출할 때 "나 42번이야" 증명 | 액세스 토큰이 만료되면 새로 발급받기 |
 | 수명 | 짧음 (1시간) | 김 (7일) |
-| 어디에 보냄 | 매 요청마다 Authorization 헤더에 | `/token/refresh` 호출할 때만 |
+| 어디에 보냄 | 매 요청마다 Authorization 헤더에 | `/auth/token/refresh` 호출할 때만 |
 
 **왜 이렇게 나눴나?**
 
@@ -64,7 +64,7 @@ JWT(JSON Web Token)는 **서버가 발급한 신분증**입니다.
 1. 로그인 → 액세스 토큰 + 리프레시 토큰 둘 다 받음
 2. API 호출할 때마다 액세스 토큰을 헤더에 넣음
 3. 1시간 후 → 서버가 "토큰 만료됨" 응답
-4. 리프레시 토큰으로 /token/refresh 호출 → 새 액세스 토큰 받음
+4. 리프레시 토큰으로 /auth/token/refresh 호출 → 새 액세스 토큰 받음
 5. 다시 API 호출 계속
 6. 7일 후 → 리프레시 토큰도 만료 → 다시 로그인
 ```
@@ -98,9 +98,12 @@ JWT(JSON Web Token)는 **서버가 발급한 신분증**입니다.
 ```
 domain/auth/
 ├── controller/
-│   └── AuthController.java              ← HTTP 요청 받는 입구 (6개 엔드포인트)
+│   └── AuthController.java              ← HTTP 요청 받는 입구 (7개 엔드포인트)
 ├── service/
-│   └── AuthService.java                 ← 비즈니스 로직 (검증, 토큰 발급, 저장)
+│   ├── AuthService.java                 ← 비즈니스 로직 (검증, 토큰 발급, 저장)
+│   ├── EmailVerificationFailHandler.java ← 인증 실패 카운팅 (별도 트랜잭션)
+│   ├── EmailService.java                ← 이메일 발송 (비동기, 트랜잭션 커밋 후 실행)
+│   └── VerificationCodeCreatedEvent.java ← 인증번호 생성 이벤트 (record)
 ├── repository/
 │   ├── EmailVerificationRepository.java ← email_verifications 테이블 조회
 │   └── RefreshTokenRepository.java      ← refresh_tokens 테이블 조회
@@ -110,19 +113,21 @@ domain/auth/
 │   └── Purpose.java                     ← 인증 목적 (SIGNUP, PASSWORD_RESET)
 └── dto/
     ├── request/
-    │   ├── EmailVerificationSendRequest.java    ← 인증번호 발송
-    │   ├── EmailVerificationVerifyRequest.java  ← 인증번호 확인
+    │   ├── EmailVerificationSendRequest.java    ← 인증번호 발송 (purpose 포함)
+    │   ├── EmailVerificationVerifyRequest.java  ← 인증번호 확인 (purpose 포함)
     │   ├── SignupRequest.java                   ← 회원가입
     │   ├── LoginRequest.java                    ← 로그인
     │   ├── TokenRefreshRequest.java             ← 토큰 재발급
-    │   └── LogoutRequest.java                   ← 로그아웃
+    │   ├── LogoutRequest.java                   ← 로그아웃
+    │   └── PasswordResetRequest.java            ← 비밀번호 재설정
     └── response/
         ├── AuthMessageResponse.java      ← 메시지만 반환 (가입, 인증, 로그아웃)
         ├── LoginResponse.java            ← 액세스 토큰 + 리프레시 토큰
         └── TokenRefreshResponse.java     ← 새 액세스 토큰
 
 global/config/
-└── SecurityConfig.java                   ← 접근제어, CORS, 필터 등록
+├── SecurityConfig.java                   ← 접근제어, CORS, 필터 등록
+└── AsyncConfig.java                      ← @EnableAsync (비동기 이벤트 처리 활성화)
 
 global/security/
 ├── JwtProvider.java                      ← JWT 생성/검증/파싱
@@ -177,7 +182,7 @@ if (token != null && jwtProvider.validateToken(token) && jwtProvider.isAccessTok
 ```java
 .authorizeHttpRequests(auth -> auth
     // 이 URL들은 누구나 접근 가능 (JWT 없어도 됨)
-    .requestMatchers("/email-verifications", "/signup", "/login", ...).permitAll()
+    .requestMatchers("/auth/email-verifications", "/auth/signup", "/auth/login", ...).permitAll()
     .requestMatchers(HttpMethod.GET, "/surveys", "/surveys/{surveyId}", ...).permitAll()
     .requestMatchers(HttpMethod.POST, "/surveys/{surveyId}/responses").permitAll()
 
@@ -210,23 +215,99 @@ public ResponseEntity<ApiResponse<UserMeResponse>> getMyInfo(
 
 ---
 
-## 5. 엔드포인트 6개 전체 흐름
+## 5. 이메일 발송 아키텍처
 
-### AUTH-01 · 인증번호 발송 `POST /email-verifications`
+인증번호 이메일 발송은 **트랜잭션 밖에서 비동기로** 처리합니다. 이게 왜 중요한지 설명합니다.
 
-**게스트 전용.** 회원가입 전에 이메일 인증을 시작합니다.
+### 문제: 트랜잭션 안에서 이메일을 보내면?
 
 ```
-클라이언트 → POST /email-verifications { "email": "user@example.com" }
-         → AuthController.sendSignupEmailVerification()
-         → AuthService.sendSignupEmailVerification()
-         → ① 이미 가입된 이메일인지 확인
+[나쁜 구조]
+@Transactional 안에서:
+  DB 저장 → 이메일 발송 → 커밋
+
+문제 1: 이메일 발송 실패 → 트랜잭션 롤백 → DB 저장도 날아감
+문제 2: 이메일 발송 성공 → 뒤에서 예외 → DB 롤백 → 메일은 이미 나감 (유령 메일)
+문제 3: 이메일 발송에 3초 걸리면 → 그 동안 DB 커넥션을 물고 있음 → 다른 요청 밀림
+```
+
+이메일은 **한번 보내면 되돌릴 수 없는 외부 부수효과(side effect)**입니다. 트랜잭션(롤백 가능)과 이메일(롤백 불가)을 같이 넣으면 둘이 어긋납니다.
+
+### 해결: 이벤트 기반 비동기 발송
+
+```
+[우리 구조]
+@Transactional 안에서:
+  DB 저장 → 이벤트 발행 → 커밋 → 즉시 응답 반환
+
+별도 스레드 (@Async + @TransactionalEventListener AFTER_COMMIT):
+  커밋 성공 → 이메일 발송 (실패해도 로그만, DB 영향 없음)
+```
+
+**핵심 3가지:**
+1. **`@TransactionalEventListener(AFTER_COMMIT)`** — 트랜잭션이 커밋된 후에만 실행. 롤백되면 메일 안 나감.
+2. **`@Async`** — 별도 스레드에서 실행. 메일 발송이 느려도 사용자 응답은 즉시 반환.
+3. **try-catch 로그** — 메일 실패해도 이미 커밋된 DB에 영향 없음. 재발송으로 복구.
+
+### 코드 흐름
+
+```java
+// AuthService (트랜잭션 안)
+emailVerificationRepository.save(emailVerification);           // DB 저장
+eventPublisher.publishEvent(new VerificationCodeCreatedEvent(email, code));  // 이벤트만 발행
+return new AuthMessageResponse("인증번호가 발송되었습니다");    // 즉시 응답
+
+// EmailService (트랜잭션 밖, 별도 스레드)
+@Async
+@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+public void handleVerificationCodeCreated(VerificationCodeCreatedEvent event) {
+    sendVerificationCode(event.email(), event.code());  // 실제 메일 발송
+}
+```
+
+### AsyncConfig
+
+`@Async`가 작동하려면 `@EnableAsync`가 켜져 있어야 합니다:
+
+```java
+@Configuration
+@EnableAsync
+public class AsyncConfig { }
+```
+
+---
+
+## 6. 엔드포인트 7개 전체 흐름
+
+### AUTH-01 · 인증번호 발송 `POST /auth/email-verifications`
+
+**게스트 전용.** 회원가입 또는 비밀번호 찾기를 위한 이메일 인증을 시작합니다. `purpose` 필드로 용도를 구분합니다.
+
+```
+클라이언트 → POST /auth/email-verifications {
+               "email": "user@example.com",
+               "purpose": "SIGNUP"           ← "SIGNUP" 또는 "PASSWORD_RESET"
+             }
+         → AuthController.sendEmailVerification()
+         → AuthService.sendEmailVerification()
+         → ① purpose에 따른 이메일 검증:
+               SIGNUP        → 이미 가입된 이메일이면 거부 (AUTH_001)
+               PASSWORD_RESET → 등록 안 된 이메일이면 거부 (AUTH_007)
          → ② 마지막 발송 후 1분 이내인지 확인 (Rate Limiting)
          → ③ 기존 인증 레코드 삭제
          → ④ 6자리 인증번호 생성 (SecureRandom)
          → ⑤ EmailVerification 엔티티 저장 (만료: 10분 후)
-         ← { "message": "인증번호가 발송되었습니다" }
+         → ⑥ VerificationCodeCreatedEvent 이벤트 발행
+         → 트랜잭션 커밋
+         ← { "message": "인증번호가 발송되었습니다" } (즉시 응답)
+         → [별도 스레드] EmailService가 실제 메일 발송
 ```
+
+**purpose에 따라 달라지는 검증:**
+- `SIGNUP`: 이미 가입된 이메일이면 거부 (중복 가입 방지)
+- `PASSWORD_RESET`: 등록되지 않은 이메일이면 거부 (없는 계정의 비밀번호는 재설정 불가)
+
+Rate Limiting, 기존 레코드 삭제, 브루트포스 방어 등 보안 로직은 두 경우 공통으로 적용됩니다.
 
 **Rate Limiting은 왜 있는가?**
 
@@ -251,14 +332,18 @@ private String createVerificationCode() {
 
 ---
 
-### AUTH-02 · 인증번호 확인 `POST /email-verifications/verify`
+### AUTH-02 · 인증번호 확인 `POST /auth/email-verifications/verify`
 
-**게스트 전용.** 발송된 인증번호를 입력해서 이메일 소유를 증명합니다.
+**게스트 전용.** 발송된 인증번호를 입력해서 이메일 소유를 증명합니다. `purpose` 필드로 용도를 구분합니다.
 
 ```
-클라이언트 → POST /email-verifications/verify { "email": "user@example.com", "code": "042857" }
-         → AuthService.verifySignupEmail()
-         → ① 해당 이메일의 인증 레코드 조회
+클라이언트 → POST /auth/email-verifications/verify {
+               "email": "user@example.com",
+               "code": "042857",
+               "purpose": "SIGNUP"           ← "SIGNUP" 또는 "PASSWORD_RESET"
+             }
+         → AuthService.verifyEmail()
+         → ① 해당 이메일 + purpose의 인증 레코드 조회
          → ② 만료 시간 확인
          → ③ 시도 횟수 확인 (브루트포스 방어)
          → ④ 코드 비교
@@ -279,7 +364,45 @@ private String createVerificationCode() {
 6번째 시도 → "인증 시도 횟수를 초과했습니다. 인증번호를 재발송해주세요."
 ```
 
-5번째 실패 시 `invalidate()`가 호출되어 만료시간을 현재로 당깁니다. 이 인증번호는 더 이상 사용할 수 없고, 새로 발급받아야 합니다.
+5번째 실패 시 `invalidate()`가 호출되어 인증번호를 무효화합니다. 이 인증번호는 더 이상 사용할 수 없고, 새로 발급받아야 합니다.
+
+**실패 카운팅이 별도 트랜잭션인 이유:**
+
+인증 실패 시 `verifyEmail()`은 `GeneralException`(RuntimeException)을 던지고, `@Transactional`은 RuntimeException이 발생하면 전체 롤백합니다. 만약 같은 트랜잭션에서 `incrementAttempt()`를 하고 예외를 던지면, **카운트 증가도 롤백되어 DB에 반영되지 않습니다.** 그러면 무한 시도가 가능해집니다.
+
+이 문제를 해결하기 위해 실패 카운팅을 **별도 `@Service`(EmailVerificationFailHandler)**로 분리하고, `@Transactional(propagation = Propagation.REQUIRES_NEW)`로 **독립 트랜잭션**을 사용합니다:
+
+```java
+// EmailVerificationFailHandler.java
+@Service
+@RequiredArgsConstructor
+public class EmailVerificationFailHandler {
+
+    private final EmailVerificationRepository emailVerificationRepository;
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public boolean recordFailedAttempt(Long emailVerificationId) {
+        EmailVerification ev = emailVerificationRepository.findById(emailVerificationId).orElse(null);
+        if (ev == null) return false;
+        ev.incrementAttempt();
+        if (ev.isMaxAttemptExceeded()) ev.invalidate();
+        return ev.isMaxAttemptExceeded();
+    }
+}
+```
+
+흐름:
+```
+코드 불일치
+  → emailVerificationFailHandler.recordFailedAttempt(id)
+    → [REQUIRES_NEW: 새 트랜잭션 시작]
+    → ID로 재조회 → 카운트 증가 → 커밋 (독립 트랜잭션)
+  → [본 트랜잭션으로 복귀]
+  → throw GeneralException → 본 트랜잭션 롤백
+  → 카운트는 이미 별도 트랜잭션에서 커밋됨 → DB에 반영됨
+```
+
+같은 클래스 안에서 메서드를 호출하면(`self-invocation`) Spring AOP 프록시를 타지 않아서 `REQUIRES_NEW`가 동작하지 않습니다. 그래서 **반드시 별도 `@Service` 빈**으로 분리해야 합니다.
 
 **인증 성공 시 만료시간 재설정:**
 
@@ -290,16 +413,16 @@ public void verify() {
 }
 ```
 
-인증번호 원래 만료시간은 10분이지만, 인증에 성공하면 **30분으로 재설정**합니다. 이 30분 안에 회원가입을 완료해야 합니다. 인증만 해놓고 며칠 뒤에 가입하는 걸 방지합니다.
+인증번호 원래 만료시간은 10분이지만, 인증에 성공하면 **30분으로 재설정**합니다. 이 30분 안에 회원가입 또는 비밀번호 재설정을 완료해야 합니다. 인증만 해놓고 며칠 뒤에 사용하는 걸 방지합니다.
 
 ---
 
-### AUTH-03 · 회원가입 `POST /signup` → 201 Created
+### AUTH-03 · 회원가입 `POST /auth/signup` → 201 Created
 
 **게스트 전용.** 이메일 인증이 완료된 상태에서 가입합니다.
 
 ```
-클라이언트 → POST /signup {
+클라이언트 → POST /auth/signup {
                "email": "user@example.com",
                "password": "mypassword123",
                "gender": "MALE",
@@ -347,12 +470,12 @@ PROFESSOR, FREELANCER, SELF_EMPLOYED, PUBLIC_OFFICIAL, UNEMPLOYED, ETC
 
 ---
 
-### AUTH-04 · 로그인 `POST /login`
+### AUTH-04 · 로그인 `POST /auth/login`
 
 **게스트 전용.** 이메일/비밀번호로 로그인하고 토큰을 받습니다.
 
 ```
-클라이언트 → POST /login { "email": "user@example.com", "password": "mypassword123" }
+클라이언트 → POST /auth/login { "email": "user@example.com", "password": "mypassword123" }
          → AuthService.login()
          → ① 이메일로 User 조회 (없으면 에러)
          → ② 비밀번호 비교 (BCrypt 해시 비교)
@@ -400,12 +523,12 @@ JPA는 SQL 실행 순서를 최적화합니다. `flush()`가 없으면 JPA가 IN
 
 ---
 
-### AUTH-05 · 토큰 재발급 `POST /token/refresh`
+### AUTH-05 · 토큰 재발급 `POST /auth/token/refresh`
 
 **게스트 허용 (permitAll).** 액세스 토큰이 만료되었을 때 새로 발급받습니다.
 
 ```
-클라이언트 → POST /token/refresh { "refreshToken": "eyJ..." }
+클라이언트 → POST /auth/token/refresh { "refreshToken": "eyJ..." }
          → AuthService.refresh()
          → ① JWT 서명 검증 (유효한 토큰인지)
          → ② type이 REFRESH인지 확인 (액세스 토큰으로 재발급 시도 방지)
@@ -426,12 +549,12 @@ JPA는 SQL 실행 순서를 최적화합니다. `flush()`가 없으면 JPA가 IN
 
 ---
 
-### AUTH-06 · 로그아웃 `POST /logout`
+### AUTH-06 · 로그아웃 `POST /auth/logout`
 
 **회원 전용.** 리프레시 토큰을 무효화합니다.
 
 ```
-클라이언트 → POST /logout { "refreshToken": "eyJ..." }
+클라이언트 → POST /auth/logout { "refreshToken": "eyJ..." }
          → AuthService.logout()
          → ① JWT 서명 검증
          → ② type이 REFRESH인지 확인
@@ -442,13 +565,32 @@ JPA는 SQL 실행 순서를 최적화합니다. `flush()`가 없으면 JPA가 IN
 
 **로그아웃하면 어떤 일이 일어나는가?**
 
-리프레시 토큰이 DB에서 삭제됩니다. 이후에 이 리프레시 토큰으로 `/token/refresh`를 호출하면, DB에 없으니까 실패합니다.
+리프레시 토큰이 DB에서 삭제됩니다. 이후에 이 리프레시 토큰으로 `/auth/token/refresh`를 호출하면, DB에 없으니까 실패합니다.
 
 액세스 토큰은? JWT 특성상 **즉시 무효화가 불가능**합니다. 이미 발급된 액세스 토큰은 만료될 때까지(1시간) 유효합니다. 하지만 리프레시 토큰이 삭제되었으므로 액세스 토큰이 만료된 후에는 재발급을 받을 수 없어서, 사실상 1시간 내에 완전히 로그아웃됩니다.
 
 ---
 
-## 6. DB 테이블
+### AUTH-07 · 비밀번호 재설정 `POST /auth/password/reset`
+
+**게스트 전용.** 이메일 인증(`purpose: "PASSWORD_RESET"`)이 완료된 후 새 비밀번호를 설정합니다.
+
+```
+클라이언트 → POST /auth/password/reset { "email": "user@example.com", "newPassword": "newpass123" }
+         → AuthService.resetPassword()
+         → ① 해당 이메일의 PASSWORD_RESET 인증 레코드 조회
+         → ② verified = true인지 확인 (인증 안 했으면 거부)
+         → ③ 만료 여부 확인 (30분 이내인지)
+         → ④ User 조회
+         → ⑤ 새 비밀번호 BCrypt 암호화 후 저장
+         ← { "message": "비밀번호가 변경되었습니다" }
+```
+
+인증 완료(`verified=true`) + 만료 전 + 등록된 이메일, 세 가지를 모두 만족해야 비밀번호를 변경할 수 있습니다.
+
+---
+
+## 7. DB 테이블
 
 ### email_verifications
 
@@ -462,14 +604,17 @@ JPA는 SQL 실행 순서를 최적화합니다. `flush()`가 없으면 JPA가 IN
 | purpose | VARCHAR(20) | SIGNUP 또는 PASSWORD_RESET |
 | verified | BOOLEAN | 인증 성공 여부 (기본 false) |
 | attempt_count | INT | 시도 횟수 (기본 0, 최대 5) |
+| invalidated | BOOLEAN | 무효화 여부 (기본 false, 5회 초과 시 true) |
 | expires_at | DATETIME | 만료 시각 (발송 후 10분, 인증 후 30분) |
 | created_at | DATETIME | 생성 시각 |
 
 **생애주기:**
 ```
-생성 (verified=false, attemptCount=0, 만료=10분후)
+생성 (verified=false, attemptCount=0, invalidated=false, 만료=10분후)
   ↓ 인증 성공
 verified=true, 만료=30분후로 재설정
+  ↓ 5회 실패 시
+invalidated=true (인증번호 무효화, 재발송 필요)
   ↓ 가입 완료 또는 재발송
 삭제 (deleteAllByEmailAndPurpose)
 ```
@@ -513,6 +658,7 @@ public class EmailVerification {
     private Purpose purpose;       // SIGNUP or PASSWORD_RESET
     private boolean verified;      // 인증 성공 여부
     private int attemptCount;      // 실패 횟수
+    private boolean invalidated;   // 무효화 여부 (브루트포스 5회 초과 시 true)
     private LocalDateTime expiresAt;
     private LocalDateTime createdAt;
 
@@ -531,8 +677,13 @@ public class EmailVerification {
     // 5번 이상 실패했는지
     public boolean isMaxAttemptExceeded() { return this.attemptCount >= MAX_ATTEMPTS; }
 
-    // 인증번호 무효화 (만료시간을 현재로 당김)
-    public void invalidate() { this.expiresAt = LocalDateTime.now(); }
+    // 인증번호 무효화 (명시적 플래그)
+    public void invalidate() { this.invalidated = true; }
+
+    // 만료 또는 무효화 여부 확인
+    public boolean isExpiredOrInvalidated() {
+        return this.expiresAt.isBefore(LocalDateTime.now()) || this.invalidated;
+    }
 }
 ```
 
@@ -569,6 +720,7 @@ public class RefreshToken {
 | LoginRequest | email, password | @NotBlank + @Email, @NotBlank |
 | TokenRefreshRequest | refreshToken | @NotBlank |
 | LogoutRequest | refreshToken | @NotBlank |
+| PasswordResetRequest | email, newPassword | @NotBlank + @Email, @NotBlank |
 
 ### Response
 
@@ -586,24 +738,27 @@ public class RefreshToken {
 
 ```
 [게스트 허용 — JWT 없이도 접근 가능]
-  POST /email-verifications        ← 인증번호 발송
-  POST /email-verifications/verify ← 인증번호 확인
-  POST /signup                     ← 회원가입
-  POST /login                      ← 로그인
-  POST /token/refresh              ← 토큰 재발급
-  GET  /surveys                    ← 설문 목록 조회
-  GET  /surveys/{id}               ← 설문 상세 조회
-  GET  /surveys/{id}/questions     ← 문항 조회
-  POST /surveys/{id}/responses     ← 설문 응답 제출
-  GET  /swagger-ui/**              ← API 문서
-  GET  /v3/api-docs/**             ← API 문서
-  GET  /actuator/**                ← 모니터링
+  POST /auth/email-verifications        ← 인증번호 발송 (purpose: SIGNUP 또는 PASSWORD_RESET)
+  POST /auth/email-verifications/verify ← 인증번호 확인 (purpose: SIGNUP 또는 PASSWORD_RESET)
+  POST /auth/signup                     ← 회원가입
+  POST /auth/login                      ← 로그인
+  POST /auth/token/refresh              ← 토큰 재발급
+  POST /auth/password/reset             ← 비밀번호 재설정
+  GET  /surveys                         ← 설문 목록 조회
+  GET  /surveys/{id}                    ← 설문 상세 조회
+  GET  /surveys/{id}/questions          ← 문항 조회
+  POST /surveys/{id}/responses          ← 설문 응답 제출
+  GET  /swagger-ui/**                   ← API 문서
+  GET  /v3/api-docs/**                  ← API 문서
+  GET  /actuator/**                     ← 모니터링
 
 [회원 전용 — JWT 필수]
   POST   /surveys                  ← 설문 생성
   DELETE /surveys/{id}             ← 설문 삭제
-  POST   /logout                   ← 로그아웃
+  POST   /auth/logout              ← 로그아웃
   GET    /users/me                 ← 내 정보 조회
+  GET    /users/me/surveys         ← 내가 등록한 설문
+  GET    /users/me/viewed-surveys  ← 내가 열람한 설문
   GET    /archive/surveys          ← 아카이브 목록
   GET    /archive/surveys/{id}     ← 아카이브 상세
   POST   /archive/surveys/{id}/views  ← 결과 구매
@@ -679,16 +834,16 @@ public boolean validateToken(String token) {
 
 | 상황 | 에러코드 | HTTP | 어디서 발생 |
 |------|---------|------|------------|
-| 이미 가입된 이메일 | AUTH_001 | 409 | sendSignup, signup |
-| 인증번호 불일치 | AUTH_002 | 400 | verifySignupEmail |
-| 인증번호 만료 | AUTH_003 | 400 | verifySignupEmail |
-| 이메일 인증 미완료 | AUTH_004 | 400 | signup |
+| 이미 가입된 이메일 | AUTH_001 | 409 | sendEmailVerification (SIGNUP), signup |
+| 인증번호 불일치 | AUTH_002 | 400 | verifyEmail |
+| 인증번호 만료 | AUTH_003 | 400 | verifyEmail, resetPassword |
+| 이메일 인증 미완료 | AUTH_004 | 400 | signup, resetPassword |
 | 이메일/비밀번호 불일치 | AUTH_005 | 401 | login |
 | 유효하지 않은 리프레시 토큰 | AUTH_006 | 401 | refresh, logout |
-| 등록되지 않은 이메일 | AUTH_007 | 404 | (비밀번호 재설정용, 미구현) |
+| 등록되지 않은 이메일 | AUTH_007 | 404 | sendEmailVerification (PASSWORD_RESET) |
 | 만료된 리프레시 토큰 | AUTH_008 | 401 | refresh |
-| 인증 시도 횟수 초과 | AUTH_009 | 429 | verifySignupEmail |
-| 인증번호 발송 제한 (1분) | AUTH_010 | 429 | sendSignup |
+| 인증 시도 횟수 초과 | AUTH_009 | 429 | verifyEmail |
+| 인증번호 발송 제한 (1분) | AUTH_010 | 429 | sendEmailVerification |
 | JWT 없이 인증 필수 API 접근 | COMMON_401 | 401 | CustomAuthenticationEntryPoint |
 
 ---
@@ -698,17 +853,18 @@ public boolean validateToken(String token) {
 ### 회원가입 흐름
 
 ```
-[이메일 입력] → POST /email-verifications
+[이메일 입력] → POST /auth/email-verifications { "email": "...", "purpose": "SIGNUP" }
   ↓ 200: 인증번호 입력 UI 표시
+  ↓ 409 (AUTH_001): "이미 가입된 이메일입니다" 표시
   ↓ 429 (AUTH_010): "잠시 후 다시 시도해주세요" 표시
 
-[인증번호 입력] → POST /email-verifications/verify
+[인증번호 입력] → POST /auth/email-verifications/verify { "email": "...", "code": "...", "purpose": "SIGNUP" }
   ↓ 200: 비밀번호/개인정보 입력 UI 표시
   ↓ 400 (AUTH_002): "인증번호가 틀렸습니다" 표시
   ↓ 400 (AUTH_003): "만료되었습니다. 재발송해주세요" 표시
   ↓ 429 (AUTH_009): "5회 초과. 재발송해주세요" 표시
 
-[가입 정보 입력] → POST /signup
+[가입 정보 입력] → POST /auth/signup
   ↓ 201: 가입 완료, 로그인 화면으로 이동
 ```
 
@@ -731,4 +887,21 @@ if (response.status === 401) {
 }
 
 // 재발급도 실패하면 → 로그인 화면으로 이동
+```
+
+### 비밀번호 찾기 흐름
+
+```
+[이메일 입력] → POST /auth/email-verifications { "email": "...", "purpose": "PASSWORD_RESET" }
+  ↓ 200: 인증번호 입력 UI 표시
+  ↓ 404 (AUTH_007): "등록되지 않은 이메일입니다" 표시
+  ↓ 429 (AUTH_010): "잠시 후 다시 시도해주세요" 표시
+
+[인증번호 입력] → POST /auth/email-verifications/verify { "email": "...", "code": "...", "purpose": "PASSWORD_RESET" }
+  ↓ 200: 새 비밀번호 입력 UI 표시
+  ↓ 400 (AUTH_002): "인증번호가 틀렸습니다" 표시
+  ↓ 429 (AUTH_009): "5회 초과. 재발송해주세요" 표시
+
+[새 비밀번호 입력] → POST /auth/password/reset
+  ↓ 200: "비밀번호가 변경되었습니다", 로그인 화면으로 이동
 ```

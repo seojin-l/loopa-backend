@@ -47,7 +47,7 @@ public class SurveyService {
         }
 
         List<Survey> surveys = surveyRepository.findSurveyList(
-                LocalDate.now(), userId, cat, keyword, cursor, size + 1);
+                LocalDate.now(), userId, cat == null ? null : cat.name(), keyword, cursor, size + 1);
 
         boolean hasNext = surveys.size() > size;
         List<Survey> page = hasNext ? surveys.subList(0, size) : surveys;

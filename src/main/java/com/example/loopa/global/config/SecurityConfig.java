@@ -44,11 +44,12 @@ public class SecurityConfig {
                                 "/actuator/**"
                         ).permitAll()
                         .requestMatchers(
-                                "/email-verifications",
-                                "/email-verifications/verify",
-                                "/signup",
-                                "/login",
-                                "/token/refresh"
+                                "/auth/email-verifications",
+                                "/auth/email-verifications/verify",
+                                "/auth/signup",
+                                "/auth/login",
+                                "/auth/token/refresh",
+                                "/auth/password/reset"
                         ).permitAll()
                         .requestMatchers(HttpMethod.GET,
                                 "/surveys",

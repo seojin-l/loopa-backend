@@ -67,9 +67,10 @@ domain/user/service/UserService.java               ← 에러코드 + 정리
                      "/v3/api-docs/**", "/actuator/**").permitAll()
 
     // 인증 관련 (비로그인 상태에서 호출하는 것들)
-    .requestMatchers("/email-verifications",
-                     "/email-verifications/verify",
-                     "/signup", "/login", "/token/refresh").permitAll()
+    .requestMatchers("/auth/email-verifications",
+                     "/auth/email-verifications/verify",
+                     "/auth/signup", "/auth/login", "/auth/token/refresh",
+                     "/auth/password/reset").permitAll()
 
     // 설문 조회 (비로그인도 가능)
     .requestMatchers(HttpMethod.GET,
@@ -87,7 +88,7 @@ domain/user/service/UserService.java               ← 에러코드 + 정리
 
 **핵심:** `anyRequest().authenticated()`로 바꾸고, **게스트도 써야 하는 엔드포인트만** 명시적으로 `permitAll()`로 열었습니다. 이렇게 하면 새 API를 추가해도 기본이 "인증 필수"이기 때문에 실수로 열어놓을 일이 없습니다.
 
-또한 `/logout`은 원래 permitAll에 포함되어 있었는데 제거했습니다. 로그아웃은 **로그인한 사용자만** 할 수 있어야 하니까요.
+또한 `/auth/logout`은 `permitAll`에 포함하지 않았습니다. 로그아웃은 **로그인한 사용자만** 할 수 있어야 하니까요.
 
 ---
 
@@ -305,12 +306,12 @@ private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
 **어떻게 고쳤나:**
 
-`sendSignupEmailVerification()` 메서드에 두 가지를 추가했습니다:
+`sendEmailVerification()` 메서드에 두 가지를 추가했습니다:
 
 ```java
 // 1. 마지막 발송 후 1분 이내면 거부
 emailVerificationRepository
-    .findTopByEmailAndPurposeOrderByCreatedAtDesc(email, Purpose.SIGNUP)
+    .findTopByEmailAndPurposeOrderByCreatedAtDesc(email, purpose)
     .ifPresent(latest -> {
         if (latest.getCreatedAt().isAfter(LocalDateTime.now().minusMinutes(1))) {
             throw new GeneralException(AuthErrorCode.EMAIL_RATE_LIMITED);
@@ -318,7 +319,7 @@ emailVerificationRepository
     });
 
 // 2. 재발송 시 기존 레코드 삭제 (DB 무한 적재 방지)
-emailVerificationRepository.deleteAllByEmailAndPurpose(email, Purpose.SIGNUP);
+emailVerificationRepository.deleteAllByEmailAndPurpose(email, purpose);
 ```
 
 **1분 이내 재요청이면 거부하지만**, 1분이 지나면 재발송을 허용합니다. "인증번호가 안 왔어요" 같은 정상적인 재발송은 1분만 기다리면 됩니다.
@@ -333,7 +334,7 @@ emailVerificationRepository.deleteAllByEmailAndPurpose(email, Purpose.SIGNUP);
 
 **어떻게 고쳤나:**
 
-`verifySignupEmail()` 메서드에 시도 횟수 검증을 추가했습니다:
+`verifyEmail()` 메서드에 시도 횟수 검증을 추가했습니다:
 
 ```java
 // 1. 이미 5번 이상 틀렸으면 바로 거부
@@ -612,19 +613,19 @@ import com.example.loopa.domain.user.repository.UserRepository;  // 중복
 ### 회원가입 흐름
 
 ```
-1. POST /email-verifications          ← 인증번호 발송
+1. POST /auth/email-verifications { purpose: "SIGNUP" }   ← 인증번호 발송
    - 이미 가입된 이메일이면 거부 (AUTH_001)
    - 1분 이내 재요청이면 거부 (AUTH_010)
    - 기존 인증 레코드 삭제 후 새로 발급
 
-2. POST /email-verifications/verify   ← 인증번호 확인
+2. POST /auth/email-verifications/verify { purpose: "SIGNUP" }   ← 인증번호 확인
    - 만료되었으면 거부 (AUTH_003)
    - 5번 이상 틀렸으면 거부 (AUTH_009)
    - 코드 불일치 시 시도 횟수 +1 (AUTH_002)
    - 5번째 실패 시 인증번호 무효화
    - 성공 시 verified = true, 만료시간 30분 연장
 
-3. POST /signup                       ← 회원가입 (201 Created)
+3. POST /auth/signup                  ← 회원가입 (201 Created)
    - 이메일 중복 확인
    - 인증 완료 + 만료 전인지 확인
    - 비밀번호 8자 이상 검증
@@ -634,18 +635,18 @@ import com.example.loopa.domain.user.repository.UserRepository;  // 중복
 ### 로그인/로그아웃 흐름
 
 ```
-4. POST /login                        ← 로그인
+4. POST /auth/login                   ← 로그인
    - 이메일/비밀번호 확인
    - 기존 리프레시 토큰 삭제 + flush
    - 새 액세스 토큰 + 리프레시 토큰 발급
 
-5. POST /token/refresh                ← 토큰 재발급
+5. POST /auth/token/refresh           ← 토큰 재발급
    - 리프레시 토큰 유효성 검증
    - DB에 저장된 토큰인지 확인
    - 만료 여부 확인
    - 새 액세스 토큰 발급
 
-6. POST /logout                       ← 로그아웃 (인증 필수)
+6. POST /auth/logout                  ← 로그아웃 (인증 필수)
    - 리프레시 토큰 유효성 검증
    - DB에서 리프레시 토큰 삭제
 ```
@@ -675,3 +676,324 @@ import com.example.loopa.domain.user.repository.UserRepository;  // 중복
 | AUTH_008 | EXPIRED_REFRESH_TOKEN | 만료된 리프레시 토큰입니다. | 401 |
 | AUTH_009 | VERIFICATION_ATTEMPT_EXCEEDED | 인증 시도 횟수를 초과했습니다. 인증번호를 재발송해주세요. | 429 |
 | AUTH_010 | EMAIL_RATE_LIMITED | 잠시 후 다시 시도해주세요. | 429 |
+
+---
+
+## 6. 추가 수정: 이메일 발송 트랜잭션 분리
+
+### 문제
+
+서진님의 이메일 발송 코드(`emailService.sendVerificationCode()`)가 `@Transactional` 안에서 직접 호출되고 있었습니다.
+
+```
+[문제가 되는 구조]
+@Transactional 안에서:
+  DB 저장 → 이메일 발송 → 커밋
+
+문제 1: 메일 실패 → 예외 → 트랜잭션 롤백 → DB 저장도 날아감
+문제 2: 메일 성공 → 이후 예외 → DB 롤백 → 유령 메일 발생
+문제 3: 메일 발송 3초 → 그 동안 DB 커넥션 점유 → 다른 요청 밀림
+```
+
+이메일은 **한번 보내면 되돌릴 수 없는 외부 부수효과**입니다. 트랜잭션(롤백 가능)과 같이 넣으면 안 됩니다.
+
+### 해결: 이벤트 기반 비동기 발송
+
+| 파일 | 변경 |
+|------|------|
+| `VerificationCodeCreatedEvent.java` | **신규** — 이메일/코드를 담는 이벤트 record |
+| `EmailService.java` | `@Async` + `@TransactionalEventListener(AFTER_COMMIT)` 리스너 추가 |
+| `AuthService.java` | `emailService.sendVerificationCode()` → `eventPublisher.publishEvent()` |
+| `AsyncConfig.java` | **신규** — `@EnableAsync` 설정 |
+
+```
+[수정 후 구조]
+요청 스레드: DB 저장 → 이벤트 발행 → 커밋 → 즉시 응답 반환
+별도 스레드: (AFTER_COMMIT + @Async) 메일 발송 (실패해도 로그만)
+```
+
+**핵심 3가지:**
+1. `@TransactionalEventListener(AFTER_COMMIT)` — 커밋 후에만 실행. 롤백 시 메일 안 나감.
+2. `@Async` — 별도 스레드. 메일이 느려도 사용자 응답은 즉시 반환.
+3. `try-catch` 로그 — 메일 실패해도 이미 커밋된 DB에 영향 없음.
+
+---
+
+## 7. 최종 검토 수정 (커밋 전 전수 검사)
+
+모든 코드를 API 명세와 대조하고, 보안 취약점과 성능 문제를 점검한 결과 CRITICAL 3건, MAJOR 2건, MINOR 1건을 발견하여 수정했습니다.
+
+4단계로 나눠서 각 단계마다 빌드 성공을 확인한 뒤 다음으로 넘어갔습니다.
+
+---
+
+### 1단계: 독립적인 수정 3건 (서로 안 얽힘)
+
+#### [m1] UserRepository 중복 import 제거
+
+`JpaRepository`가 두 번 import되어 있었습니다. 중복 제거.
+
+#### [M1] UserSurveyResponse 상태값 한글 → 영문 통일
+
+**문제가 뭐였나:**
+
+```java
+// 수정 전
+survey.isClosed() ? "종료" : "진행 중"
+```
+
+다른 모든 API(`SurveyDetailResponse`, `SurveyCreateResponse`)는 `"CLOSED"` / `"IN_PROGRESS"`를 사용하는데, `UserSurveyResponse`만 한글이었습니다. 프론트엔드가 상태값으로 분기할 때 불일치가 발생합니다.
+
+**어떻게 고쳤나:**
+
+```java
+// 수정 후
+survey.isClosed() ? "CLOSED" : "IN_PROGRESS"
+```
+
+#### [C2] EmailVerification.invalidate() — invalidated 플래그 추가
+
+**문제가 뭐였나:**
+
+```java
+// 수정 전
+public void invalidate() {
+    this.expiresAt = LocalDateTime.now();  // 만료시간을 현재로 당김
+}
+```
+
+만료 체크가 `expiresAt.isBefore(LocalDateTime.now())`인데, `invalidate()`가 `now()`로 설정하면 **같은 밀리초 내에서 `isBefore`가 `false`를 반환**합니다. 즉, 만료 처리가 즉시 적용되지 않는 버그입니다.
+
+**어떻게 고쳤나:**
+
+시간 비교에 의존하는 대신, 명시적인 `invalidated` boolean 플래그를 추가했습니다:
+
+```java
+// 수정 후
+@Column(nullable = false)
+private boolean invalidated;
+
+public void invalidate() {
+    this.invalidated = true;  // 명시적 플래그
+}
+
+public boolean isExpiredOrInvalidated() {
+    return this.expiresAt.isBefore(LocalDateTime.now()) || this.invalidated;
+}
+```
+
+`AuthService.verifyEmail()`에서 만료 체크도 변경:
+
+```java
+// 수정 전
+if (emailVerification.getExpiresAt().isBefore(LocalDateTime.now())) { ... }
+
+// 수정 후
+if (emailVerification.isExpiredOrInvalidated()) { ... }
+```
+
+---
+
+### 2단계: 브루트포스 방어 트랜잭션 분리 (C1, 단독)
+
+#### [C1] 인증 실패 카운팅이 DB에 반영되지 않는 보안 구멍
+
+**문제가 뭐였나:**
+
+```java
+// 수정 전 (AuthService.verifyEmail 안)
+if (!emailVerification.getCode().equals(request.code())) {
+    emailVerification.incrementAttempt();       // attemptCount++
+    if (emailVerification.isMaxAttemptExceeded()) {
+        emailVerification.invalidate();
+    }
+    throw new GeneralException(...);  // ← RuntimeException → @Transactional 롤백!
+}
+```
+
+`GeneralException`은 `RuntimeException`이므로 `@Transactional`이 전체 롤백합니다. 그 결과 `incrementAttempt()`와 `invalidate()` 변경이 **DB에 반영되지 않습니다.** attemptCount가 영원히 0 → 6자리 인증코드(100만 조합) 무한 브루트포스 가능.
+
+**어떻게 고쳤나:**
+
+실패 카운팅을 **별도 `@Service` 빈**으로 분리하고, `REQUIRES_NEW`로 독립 트랜잭션을 사용:
+
+| 파일 | 변경 |
+|------|------|
+| `EmailVerificationFailHandler.java` | **신규** — `@Transactional(propagation = Propagation.REQUIRES_NEW)` |
+| `AuthService.java` | 직접 카운팅 → 별도 빈의 `recordFailedAttempt(id)` 호출 |
+
+```java
+// AuthService.verifyEmail() — 수정 후
+if (!emailVerification.getCode().equals(request.code())) {
+    emailVerificationFailHandler.recordFailedAttempt(emailVerification.getId());
+    throw new GeneralException(AuthErrorCode.VERIFICATION_CODE_MISMATCH);
+}
+```
+
+흐름:
+```
+코드 불일치
+  → recordFailedAttempt(id)  [REQUIRES_NEW: 별도 트랜잭션으로 카운트 증가+커밋]
+  → throw GeneralException   [본 트랜잭션 롤백 — 카운트는 이미 커밋됨]
+```
+
+**왜 별도 빈인가:** 같은 클래스 안에서 메서드 호출(`self-invocation`)하면 Spring AOP 프록시를 타지 않아서 `REQUIRES_NEW`가 동작하지 않습니다.
+
+**왜 ID로 재조회하는가:** `REQUIRES_NEW`는 새로운 영속성 컨텍스트를 만들기 때문에, 외부 트랜잭션에서 로드한 엔티티를 그대로 넘기면 detached 상태가 됩니다. ID로 다시 조회해야 합니다.
+
+---
+
+### 3단계: 목록 쿼리 LIMIT 누락 수정 (C3, 단독)
+
+#### [C3] JPQL 쿼리에 LIMIT이 없어서 전체 데이터를 메모리에 로딩
+
+**문제가 뭐였나:**
+
+```java
+// 수정 전 (SurveyRepository)
+@Query("SELECT s FROM Survey s WHERE ... ORDER BY s.id DESC")
+List<Survey> findSurveyList(..., int size);  // size가 JPQL에서 미사용!
+```
+
+`size` 파라미터를 받아놓고 JPQL에서 사용하지 않아 SQL에 `LIMIT`이 없었습니다. 조건에 맞는 **전체 설문을 메모리에 올린 뒤** Java `subList()`로 잘라내는 구조였습니다. 데이터가 수천 건 이상 쌓이면 OOM 위험.
+
+**어떻게 고쳤나:**
+
+JPQL → **네이티브 쿼리**로 전환하여 `LIMIT :size`를 직접 명시:
+
+```java
+// 수정 후
+@Query(value = "SELECT * FROM surveys s " +
+    "WHERE s.is_deleted = false " +
+    "AND s.end_date >= :today " +
+    "AND (:creatorId IS NULL OR s.creator_id <> :creatorId) " +
+    "AND (:category IS NULL OR s.category = :category) " +
+    "AND (:keyword IS NULL OR s.title LIKE CONCAT('%', :keyword, '%')) " +
+    "AND (:cursor IS NULL OR s.id < :cursor) " +
+    "ORDER BY s.id DESC " +
+    "LIMIT :size", nativeQuery = true)
+List<Survey> findSurveyList(@Param("today") LocalDate today, ...);
+```
+
+**변경한 쿼리 3개:**
+
+| 쿼리 | 용도 |
+|------|------|
+| `findSurveyList` | 설문 목록 (SURVEY-01) |
+| `findArchiveList` | 아카이브 목록 (ARCHIVE-01) |
+| `findShareableSurveys` | 내 공유 가능 설문 (ARCHIVE-05) |
+
+**왜 Pageable이 아니라 네이티브 쿼리인가:**
+
+우리 프로젝트는 **커서 페이지네이션**입니다. `Pageable`은 offset 기반이라 커서와 섞이면 혼란을 줍니다. 커서 조건(`WHERE id < :cursor`)은 쿼리에서 처리하고, LIMIT만 추가하면 되므로 네이티브 쿼리가 더 맞습니다.
+
+**호출부 변경:** 네이티브 쿼리에서 `category`는 String으로 받으므로, 서비스에서 `cat.name()`으로 enum → String 변환:
+
+```java
+// SurveyService, ArchiveService
+surveyRepository.findSurveyList(..., cat == null ? null : cat.name(), ...);
+```
+
+---
+
+### 4단계: User 도메인 커서 페이지네이션 적용 (M2)
+
+#### [M2] GET /users/me/surveys, /me/viewed-surveys — 전체 반환 → 커서 페이지네이션
+
+**문제가 뭐였나:**
+
+다른 모든 목록 API(설문 목록, 아카이브 목록)는 커서 페이지네이션(`cursor`, `size`, `nextCursor`, `hasNext`)을 사용하는데, User 도메인만 `List` 전체를 반환하고 있었습니다. API 일관성 깨짐 + 데이터 증가 시 성능 문제.
+
+**어떻게 고쳤나:**
+
+| 파일 | 변경 |
+|------|------|
+| `UserController.java` | cursor/size 파라미터 추가, `CursorPageResponse` 반환 |
+| `UserService.java` | 커서 페이지네이션 로직 적용 (3단계 패턴 재사용) |
+| `SurveyRepository.java` | `findMySurveys` 네이티브 커서 쿼리 추가 |
+| `ArchiveViewRepository.java` | `findViewedSurveysByViewerId`에 cursor/LIMIT 적용 |
+
+```java
+// UserController — 수정 후
+@GetMapping("/me/surveys")
+public ResponseEntity<ApiResponse<CursorPageResponse<UserSurveyResponse>>> getMySurveys(
+        @AuthenticationPrincipal Long userId,
+        @RequestParam(required = false) Long cursor,
+        @RequestParam(defaultValue = "20") int size) { ... }
+```
+
+```java
+// SurveyRepository — 신규 쿼리
+@Query(value = "SELECT * FROM surveys s " +
+    "WHERE s.is_deleted = false AND s.creator_id = :creatorId " +
+    "AND (:cursor IS NULL OR s.id < :cursor) " +
+    "ORDER BY s.id DESC LIMIT :size", nativeQuery = true)
+List<Survey> findMySurveys(@Param("creatorId") Long creatorId,
+                           @Param("cursor") Long cursor,
+                           @Param("size") int size);
+```
+
+---
+
+### 수정 파일 전체 목록
+
+| 파일 | 이슈 | 단계 |
+|------|------|------|
+| `UserRepository.java` | m1: 중복 import 제거 | 1 |
+| `UserSurveyResponse.java` | M1: 상태값 영문 통일 | 1 |
+| `EmailVerification.java` | C2: invalidated 플래그 추가 | 1 |
+| `AuthService.java` | C2: isExpiredOrInvalidated() + C1: 별도 빈 호출 | 1, 2 |
+| `EmailVerificationFailHandler.java` | C1: **신규** — REQUIRES_NEW 트랜잭션 | 2 |
+| `SurveyRepository.java` | C3: LIMIT 추가 + M2: findMySurveys 추가 | 3, 4 |
+| `SurveyService.java` | C3: enum → String 변환 | 3 |
+| `ArchiveService.java` | C3: enum → String 변환 | 3 |
+| `ArchiveViewRepository.java` | M2: cursor/LIMIT 적용 | 4 |
+| `UserController.java` | M2: cursor/size + CursorPageResponse | 4 |
+| `UserService.java` | M2: 커서 페이지네이션 로직 | 4 |
+
+---
+
+### 5단계: 체크 순서 수정 (E2E 테스트 중 발견)
+
+#### 인증 실패 6번째 시도 시 AUTH_003 대신 AUTH_009 반환되도록 수정
+
+**문제가 뭐였나:**
+
+E2E API 테스트 중 발견된 문제입니다. 인증코드를 5회 틀린 뒤 6번째 시도를 하면:
+
+- **기대:** AUTH_009 (429) — "인증 시도 횟수를 초과했습니다"
+- **실제:** AUTH_003 (400) — "인증번호가 만료되었습니다"
+
+원인은 `verifyEmail()`에서 체크 순서가 잘못되어 있었습니다:
+
+```java
+// 수정 전 — isExpiredOrInvalidated()가 먼저
+if (emailVerification.isExpiredOrInvalidated()) {  // ← 이게 먼저 걸림
+    throw new GeneralException(AuthErrorCode.VERIFICATION_CODE_EXPIRED);
+}
+if (emailVerification.isMaxAttemptExceeded()) {
+    throw new GeneralException(AuthErrorCode.VERIFICATION_ATTEMPT_EXCEEDED);
+}
+```
+
+5회 실패 시 `invalidate()`가 호출되어 `invalidated = true`가 됩니다. 그래서 6번째 시도에서 `isExpiredOrInvalidated()`가 먼저 `true`를 반환하여 AUTH_003이 나갑니다. 기능적으로 브루트포스는 차단되지만, 사용자에게 "만료되었습니다"라고 말하는 건 오해를 줍니다.
+
+**어떻게 고쳤나:**
+
+체크 순서를 바꿨습니다:
+
+```java
+// 수정 후 — isMaxAttemptExceeded()가 먼저
+if (emailVerification.isMaxAttemptExceeded()) {
+    throw new GeneralException(AuthErrorCode.VERIFICATION_ATTEMPT_EXCEEDED);
+}
+if (emailVerification.isExpiredOrInvalidated()) {
+    throw new GeneralException(AuthErrorCode.VERIFICATION_CODE_EXPIRED);
+}
+```
+
+이제 6번째 시도에서 AUTH_009가 정확하게 반환됩니다.
+
+| 파일 | 변경 |
+|------|------|
+| `AuthService.java` | `verifyEmail()` 내 체크 순서: `isMaxAttemptExceeded()` → `isExpiredOrInvalidated()` |

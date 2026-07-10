@@ -54,7 +54,7 @@ domain/survey/
 클라이언트 → GET /surveys?category=IT_AI&keyword=대학생&cursor=50&size=20
          → SurveyController.getList()
          → SurveyService.getList()
-         → SurveyRepository.findSurveyList() ← JPQL 커스텀 쿼리
+         → SurveyRepository.findSurveyList() ← 네이티브 쿼리 (LIMIT 포함)
          ← 목록 + nextCursor + hasNext 반환
 ```
 

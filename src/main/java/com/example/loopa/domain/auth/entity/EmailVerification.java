@@ -35,6 +35,9 @@ public class EmailVerification {
     @Column(name = "attempt_count", nullable = false)
     private int attemptCount;
 
+    @Column(nullable = false)
+    private boolean invalidated;
+
     @Column(name = "expires_at", nullable = false)
     private LocalDateTime expiresAt;
 
@@ -46,6 +49,7 @@ public class EmailVerification {
         this.code = code;
         this.purpose = purpose;
         this.verified = false;
+        this.invalidated = false;
         this.attemptCount = 0;
         this.expiresAt = expiresAt;
     }
@@ -64,7 +68,11 @@ public class EmailVerification {
     }
 
     public void invalidate() {
-        this.expiresAt = LocalDateTime.now();
+        this.invalidated = true;
+    }
+
+    public boolean isExpiredOrInvalidated() {
+        return this.expiresAt.isBefore(LocalDateTime.now()) || this.invalidated;
     }
 
     @PrePersist
