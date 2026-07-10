@@ -99,7 +99,9 @@ public class ArchiveService {
         Optional<ArchiveView> existing = archiveViewRepository.findByViewerIdAndSurveyId(userId, surveyId);
         if (existing.isPresent()) {
             ArchiveView view = existing.get();
-            return buildFreePurchaseResponse(view.getId(), surveyId, user.getTokenBalance());
+            return new ArchiveViewPurchaseResponse(view.getId(), surveyId, 0,
+                    user.getTokenBalance(), user.getTokenBalance(),
+                    view.getViewedAt().toString());
         }
 
         // 신규 구매
