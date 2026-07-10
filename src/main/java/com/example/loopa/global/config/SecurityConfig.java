@@ -40,7 +40,7 @@ public class SecurityConfig {
                                 "/token/refresh",
                                 "/logout"
                         ).permitAll()
-                        .requestMatchers("/users/me").authenticated()
+                        .requestMatchers("/users/**").authenticated()
                         .anyRequest().permitAll()
                 )
                 .addFilterBefore(
