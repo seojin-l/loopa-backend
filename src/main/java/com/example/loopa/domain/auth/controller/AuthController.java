@@ -1,9 +1,7 @@
 package com.example.loopa.domain.auth.controller;
 
 import com.example.loopa.domain.auth.dto.request.*;
-import com.example.loopa.domain.auth.dto.response.AuthMessageResponse;
-import com.example.loopa.domain.auth.dto.response.LoginResponse;
-import com.example.loopa.domain.auth.dto.response.TokenRefreshResponse;
+import com.example.loopa.domain.auth.dto.response.*;
 import com.example.loopa.domain.auth.service.AuthService;
 import com.example.loopa.global.response.ApiResponse;
 import jakarta.validation.Valid;
@@ -11,6 +9,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import com.example.loopa.domain.auth.dto.response.EmailVerificationSendResponse;
+import com.example.loopa.domain.auth.dto.response.EmailVerificationVerifyResponse;
 
 @RestController
 @RequestMapping("/auth")
@@ -20,19 +20,23 @@ public class AuthController {
     private final AuthService authService;
 
     @PostMapping("/email-verifications")
-    public ResponseEntity<ApiResponse<AuthMessageResponse>> sendEmailVerification(
-            @Valid @RequestBody EmailVerificationSendRequest request) {
-
-        return ResponseEntity.ok(ApiResponse.success(
-                authService.sendEmailVerification(request)));
+    public ApiResponse<EmailVerificationSendResponse> sendEmailVerification(
+            @Valid @RequestBody EmailVerificationSendRequest request
+    ) {
+        return ApiResponse.success(
+                "인증번호가 발송되었습니다.",
+                authService.sendEmailVerification(request)
+        );
     }
 
     @PostMapping("/email-verifications/verify")
-    public ResponseEntity<ApiResponse<AuthMessageResponse>> verifyEmail(
-            @Valid @RequestBody EmailVerificationVerifyRequest request) {
-
-        return ResponseEntity.ok(ApiResponse.success(
-                authService.verifyEmail(request)));
+    public ApiResponse<EmailVerificationVerifyResponse> verifyEmail(
+            @Valid @RequestBody EmailVerificationVerifyRequest request
+    ) {
+        return ApiResponse.success(
+                "인증번호가 일치합니다.",
+                authService.verifyEmail(request)
+        );
     }
 
     @PostMapping("/signup")
