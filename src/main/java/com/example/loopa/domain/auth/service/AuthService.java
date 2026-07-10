@@ -40,6 +40,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtProvider jwtProvider;
     private final RefreshTokenRepository refreshTokenRepository;
+    private final EmailService emailService;
 
     @Transactional
     public AuthMessageResponse sendSignupEmailVerification(EmailVerificationSendRequest request) {
@@ -68,6 +69,8 @@ public class AuthService {
         );
 
         emailVerificationRepository.save(emailVerification);
+
+        emailService.sendVerificationCode(email, code);
 
         return new AuthMessageResponse("인증번호가 발송되었습니다");
     }
