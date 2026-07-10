@@ -7,9 +7,7 @@ import com.example.loopa.domain.auth.dto.request.LogoutRequest;
 import com.example.loopa.domain.auth.dto.request.PasswordResetRequest;
 import com.example.loopa.domain.auth.dto.request.SignupRequest;
 import com.example.loopa.domain.auth.dto.request.TokenRefreshRequest;
-import com.example.loopa.domain.auth.dto.response.AuthMessageResponse;
-import com.example.loopa.domain.auth.dto.response.LoginResponse;
-import com.example.loopa.domain.auth.dto.response.TokenRefreshResponse;
+import com.example.loopa.domain.auth.dto.response.*;
 import com.example.loopa.domain.auth.entity.EmailVerification;
 import com.example.loopa.domain.auth.entity.Purpose;
 import com.example.loopa.domain.auth.entity.RefreshToken;
@@ -26,6 +24,8 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.example.loopa.domain.auth.dto.response.EmailVerificationSendResponse;
+import com.example.loopa.domain.auth.dto.response.EmailVerificationVerifyResponse;
 
 import java.security.SecureRandom;
 import java.time.Duration;
@@ -47,7 +47,7 @@ public class AuthService {
     private final EmailVerificationFailHandler emailVerificationFailHandler;
 
     @Transactional
-    public AuthMessageResponse sendEmailVerification(EmailVerificationSendRequest request) {
+    public EmailVerificationSendResponse sendEmailVerification(EmailVerificationSendRequest request) {
         Purpose purpose = parsePurpose(request.purpose());
         String email = request.email();
 
@@ -69,23 +69,28 @@ public class AuthService {
         emailVerificationRepository.deleteAllByEmailAndPurpose(email, purpose);
 
         String code = createVerificationCode();
+        LocalDateTime expiresAt = LocalDateTime.now().plusMinutes(10);
 
         EmailVerification emailVerification = new EmailVerification(
                 email,
                 code,
                 purpose,
-                LocalDateTime.now().plusMinutes(10)
+                expiresAt
         );
 
         emailVerificationRepository.save(emailVerification);
 
         eventPublisher.publishEvent(new VerificationCodeCreatedEvent(email, code));
 
-        return new AuthMessageResponse("인증번호가 발송되었습니다");
+        return new EmailVerificationSendResponse(
+                email,
+                purpose,
+                expiresAt
+        );
     }
 
     @Transactional
-    public AuthMessageResponse verifyEmail(EmailVerificationVerifyRequest request) {
+    public EmailVerificationVerifyResponse verifyEmail(EmailVerificationVerifyRequest request) {
         Purpose purpose = parsePurpose(request.purpose());
 
         EmailVerification emailVerification = emailVerificationRepository
@@ -93,7 +98,11 @@ public class AuthService {
                 .orElseThrow(() -> new GeneralException(AuthErrorCode.VERIFICATION_CODE_MISMATCH));
 
         if (emailVerification.isVerified()) {
-            return new AuthMessageResponse("인증번호가 일치합니다");
+            return new EmailVerificationVerifyResponse(
+                    emailVerification.getEmail(),
+                    emailVerification.getPurpose(),
+                    true
+            );
         }
 
         if (emailVerification.isMaxAttemptExceeded()) {
@@ -111,7 +120,11 @@ public class AuthService {
 
         emailVerification.verify();
 
-        return new AuthMessageResponse("인증번호가 일치합니다");
+        return new EmailVerificationVerifyResponse(
+                emailVerification.getEmail(),
+                emailVerification.getPurpose(),
+                emailVerification.isVerified()
+        );
     }
 
     @Transactional
