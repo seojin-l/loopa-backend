@@ -26,6 +26,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.example.loopa.domain.auth.dto.response.EmailVerificationSendResponse;
 import com.example.loopa.domain.auth.dto.response.EmailVerificationVerifyResponse;
+import com.example.loopa.domain.token.service.TokenService;
+import com.example.loopa.domain.token.entity.TokenTxType;
 
 import java.security.SecureRandom;
 import java.time.Duration;
@@ -45,6 +47,7 @@ public class AuthService {
     private final RefreshTokenRepository refreshTokenRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final EmailVerificationFailHandler emailVerificationFailHandler;
+    private final TokenService tokenService;
 
     @Transactional
     public EmailVerificationSendResponse sendEmailVerification(EmailVerificationSendRequest request) {
@@ -128,7 +131,7 @@ public class AuthService {
     }
 
     @Transactional
-    public AuthMessageResponse signup(SignupRequest request) {
+    public SignupResponse signup(SignupRequest request) {
         if (userRepository.existsByEmail(request.email())) {
             throw new GeneralException(AuthErrorCode.ALREADY_EXISTS);
         }
@@ -152,11 +155,20 @@ public class AuthService {
                 request.age(),
                 request.job()
         );
-        userRepository.save(user);
+        User savedUser=userRepository.save(user);
+
+        int tokenBalance = tokenService.record(
+                savedUser.getId(),
+                TokenTxType.SIGNUP_BONUS,
+                100,
+                null,
+                null
+        );
 
         emailVerificationRepository.deleteAllByEmailAndPurpose(request.email(), Purpose.SIGNUP);
 
-        return new AuthMessageResponse("회원가입이 완료되었습니다");
+        return new SignupResponse(savedUser.getId(), savedUser.getEmail(), tokenBalance, savedUser.getCreatedAt()
+        );
     }
 
     private String createVerificationCode() {

@@ -11,6 +11,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import com.example.loopa.domain.auth.dto.response.EmailVerificationSendResponse;
 import com.example.loopa.domain.auth.dto.response.EmailVerificationVerifyResponse;
+import com.example.loopa.domain.auth.dto.response.SignupResponse;
 
 @RestController
 @RequestMapping("/auth")
@@ -40,11 +41,10 @@ public class AuthController {
     }
 
     @PostMapping("/signup")
-    public ResponseEntity<ApiResponse<AuthMessageResponse>> signup(
+    public ResponseEntity<ApiResponse<SignupResponse>> signup(
             @Valid @RequestBody SignupRequest request) {
 
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success(authService.signup(request)));
+        return ResponseEntity.ok(ApiResponse.success("회원가입이 완료되었습니다.",authService.signup(request)));
     }
 
     @PostMapping("/login")

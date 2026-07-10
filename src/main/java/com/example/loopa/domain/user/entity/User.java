@@ -51,7 +51,7 @@ public class User {
         this.gender = gender;
         this.age = age;
         this.job = job;
-        this.tokenBalance = 100;
+        this.tokenBalance = 0;
     }
 
     public void updatePassword(String password) {
