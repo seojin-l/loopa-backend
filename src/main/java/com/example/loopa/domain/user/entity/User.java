@@ -33,7 +33,7 @@ public class User {
     private Integer age;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
+    @Column(length = 20)
     private Job job;
 
     @Column(name = "token_balance", nullable = false)

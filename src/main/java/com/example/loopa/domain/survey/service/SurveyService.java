@@ -59,14 +59,25 @@ public class SurveyService {
             User user = userRepository.findById(userId)
                     .orElseThrow(() -> new GeneralException(GlobalErrorCode.NOT_FOUND));
 
-            surveys = surveyRepository.findRecommendedSurveyList(
-                    LocalDate.now(),
-                    userId,
-                    user.getJob().name(),
-                    keyword,
-                    cursor,
-                    size + 1
-            );
+            if (user.getJob() != null) {
+                surveys = surveyRepository.findRecommendedSurveyList(
+                        LocalDate.now(),
+                        userId,
+                        user.getJob().name(),
+                        keyword,
+                        cursor,
+                        size + 1
+                );
+            } else {
+                surveys = surveyRepository.findSurveyList(
+                        LocalDate.now(),
+                        userId,
+                        null,
+                        keyword,
+                        cursor,
+                        size + 1
+                );
+            }
         } else {
             surveys = surveyRepository.findSurveyList(
                     LocalDate.now(),

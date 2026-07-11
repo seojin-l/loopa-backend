@@ -25,7 +25,6 @@ public record SignupRequest(
         @Min(value = 1, message = "나이는 1 이상이어야 합니다.")
         Integer age,
 
-        @NotNull(message = "직업을 선택해주세요.")
         Job job
 ) {
 }
