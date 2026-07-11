@@ -46,9 +46,37 @@ public class SurveyService {
             }
         }
 
-        List<Survey> surveys = surveyRepository.findSurveyList(
-                LocalDate.now(), userId, cat == null ? null : cat.name(), keyword, cursor, size + 1);
+        //전체카테고리 직업관련 정렬
+        List<Survey> surveys;
 
+        boolean isMainFirstPageAllCategory =
+                cat == null
+                        && cursor == null
+                        && size == 4
+                        && userId != null;
+
+        if (isMainFirstPageAllCategory) {
+            User user = userRepository.findById(userId)
+                    .orElseThrow(() -> new GeneralException(GlobalErrorCode.NOT_FOUND));
+
+            surveys = surveyRepository.findRecommendedSurveyList(
+                    LocalDate.now(),
+                    userId,
+                    user.getJob().name(),
+                    keyword,
+                    cursor,
+                    size + 1
+            );
+        } else {
+            surveys = surveyRepository.findSurveyList(
+                    LocalDate.now(),
+                    userId,
+                    cat == null ? null : cat.name(),
+                    keyword,
+                    cursor,
+                    size + 1
+            );
+        }
         boolean hasNext = surveys.size() > size;
         List<Survey> page = hasNext ? surveys.subList(0, size) : surveys;
 
@@ -197,4 +225,5 @@ public class SurveyService {
                 .filter(q -> q.getType() == type)
                 .count();
     }
+
 }
