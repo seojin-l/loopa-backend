@@ -141,31 +141,13 @@ answer_id=2, option_id=9005          ← "Go" 선택
 | 4  | 42      | RESULT_VIEW       | -15    | 66            | 103               |
 ```
 
-### users.token_balance는 왜 있는가 — 의도적 반정규화
+### 왜 token_balance와 token_transactions 둘 다 필요한가
 
-`token_balance`는 `SUM(amount) WHERE user_id = ?`로 계산할 수 있으므로, 정규화 관점에서는 **이행 종속(3NF 위반)** 입니다. 원장에서 파생 가능한 값을 별도 컬럼에 저장하고 있으니까요.
+**1단계: 잔액(`token_balance`)은 당연히 필요합니다.**
 
-**그런데도 저장하는 이유:**
+메인 화면, 마이페이지, 설문 생성, 열람 구매 등 거의 모든 화면에서 잔액을 표시합니다. 유저당 잔액은 항상 1개이므로 users 테이블의 컬럼으로 저장합니다.
 
-```sql
--- token_balance가 없다면, 잔액 조회할 때마다:
-SELECT SUM(amount) FROM token_transactions WHERE user_id = 42;
--- 거래가 1만 건이면 1만 행을 매번 합산
-```
-
-메인 화면, 마이페이지, 설문 생성, 열람 구매 등 **거의 모든 화면에서 잔액을 표시**합니다. 매번 SUM 집계를 하면 성능이 나빠집니다.
-
-그래서 `users.token_balance`에 **캐시**로 저장하고, 토큰이 변동될 때마다 `token_transactions` INSERT와 `users.token_balance` UPDATE를 **같은 트랜잭션**에서 수행합니다.
-
-```java
-// TokenService.record() — 항상 같은 트랜잭션
-user.updateTokenBalance(after);           // 캐시 갱신
-tokenTransactionRepository.save(tx);      // 원장 기록
-```
-
-**캐시와 원장이 불일치하면?** 트랜잭션으로 묶여 있으므로 하나가 실패하면 둘 다 롤백됩니다. 불일치가 발생할 수 없습니다.
-
-**원장 없이 token_balance만 있으면?**
+**2단계: 잔액만 있으면 추적이 불가능합니다.**
 
 ```
 현재 잔액: 66토큰
@@ -174,6 +156,27 @@ tokenTransactionRepository.save(tx);      // 원장 기록
 → "50명 보너스를 이미 줬는지?" 판단 불가능
 → 버그로 잔액이 꼬였을 때 검증 수단 없음
 ```
+
+그래서 모든 토큰 변동을 기록하는 원장(`token_transactions`)이 필요합니다.
+
+**3단계: 둘의 역할은 다릅니다.**
+
+| | token_balance | token_transactions |
+|---|---|---|
+| 역할 | 현재 잔액 (원본) | 변동 이력 (추적) |
+| 연산 | 현재 잔액에서 가감 | INSERT만 |
+| 용도 | 잔액 조회, 잔액 부족 검사 | 감사 추적, 중복 지급 방지 |
+
+token_balance는 원장의 캐시가 아닙니다. SUM 집계로 잔액을 계산하지 않고, **현재 잔액에서 직접 가감**합니다:
+
+```java
+// TokenService.record() — 항상 같은 트랜잭션
+int after = user.getTokenBalance() + amount;  // 현재 잔액 + 변동분
+user.updateTokenBalance(after);               // 잔액 갱신
+tokenTransactionRepository.save(tx);          // 이력 기록
+```
+
+**정합성 보장:** 잔액 갱신과 이력 기록을 같은 트랜잭션에서 수행하므로, 하나가 실패하면 둘 다 롤백됩니다. 비관적 락(`findByIdForUpdate`)으로 동시 요청 시 잔액이 꼬이는 것도 방지합니다.
 
 ### balance_after 컬럼의 역할
 
@@ -578,6 +581,6 @@ token_transactions에 `RESULT_VIEW` 거래가 기록되는데, 왜 archive_views
 |------------|-----------|------|
 | surveys → questions → question_options | **3NF** | 이행 종속 없음, 반복 그룹 없음 |
 | survey_responses → answers → answer_options | **3NF** | answer_options = M:N 교차 테이블 |
-| users + token_transactions | **의도적 반정규화** | token_balance는 3NF 위반이지만 성능을 위해 캐시 유지, 트랜잭션으로 정합성 보장 |
+| users + token_transactions | **역할 분리** | token_balance = 현재 잔액(가감 연산), token_transactions = 변동 이력(추적·감사) |
 | refresh_tokens, email_verifications | **3NF** | users와 1:N (email_verifications는 FK 없이 email로 연결) |
 | archive_views | **3NF** | 복합 UNIQUE로 1인 1구매 강제 |

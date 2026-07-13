@@ -1,5 +1,7 @@
 package com.example.loopa.domain.survey.service;
 
+import com.example.loopa.domain.archive.dto.response.ArchiveResultResponse;
+import com.example.loopa.domain.archive.dto.response.ArchiveResultResponse.*;
 import com.example.loopa.domain.response.repository.SurveyResponseRepository;
 import com.example.loopa.domain.survey.dto.request.SurveyCreateRequest;
 import com.example.loopa.domain.survey.dto.response.*;
@@ -14,12 +16,15 @@ import com.example.loopa.global.common.CursorPageResponse;
 import com.example.loopa.global.error.code.GlobalErrorCode;
 import com.example.loopa.global.error.code.SurveyErrorCode;
 import com.example.loopa.global.error.exception.GeneralException;
+import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 
 @Service
@@ -31,6 +36,7 @@ public class SurveyService {
     private final SurveyResponseRepository surveyResponseRepository;
     private final UserRepository userRepository;
     private final TokenService tokenService;
+    private final EntityManager em;
 
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
@@ -209,7 +215,42 @@ public class SurveyService {
                 survey.getCreatedAt().toLocalDate().format(DATE_FMT));
     }
 
-    // SURVEY-05 삭제
+    // SURVEY-05 설문 결과 조회 (생성자 전용, 진행 중에도 가능)
+    public ArchiveResultResponse getResult(Long userId, Long surveyId) {
+        Survey s = findSurveyOrThrow(surveyId);
+
+        if (!s.getCreator().getId().equals(userId)) {
+            throw new GeneralException(GlobalErrorCode.FORBIDDEN);
+        }
+
+        int mc = countByType(s, QuestionType.MULTIPLE_CHOICE);
+        int sa = countByType(s, QuestionType.SUBJECTIVE);
+        long totalRespondentCount = surveyResponseRepository.countBySurveyId(surveyId);
+
+        List<Question> questions = s.getQuestions().stream()
+                .sorted(Comparator.comparingInt(Question::getQuestionOrder))
+                .toList();
+
+        List<ArchiveResultResponse.QuestionResultDto> results = questions.stream().map(q -> {
+            if (q.getType() == QuestionType.MULTIPLE_CHOICE) {
+                return buildMcResult(q, surveyId, totalRespondentCount);
+            } else {
+                return buildSaResult(q, surveyId);
+            }
+        }).toList();
+
+        ArchiveResultResponse.SurveyInfoDto surveyInfo = new ArchiveResultResponse.SurveyInfoDto(
+                s.getId(), s.getTitle(), s.getCategory().name(), s.getTarget(),
+                s.getDescription(),
+                s.getStartDate().format(DATE_FMT), s.getEndDate().format(DATE_FMT),
+                totalRespondentCount,
+                new SurveyDetailResponse.QuestionCountDto(mc, sa, mc + sa),
+                s.getCreatedAt().toLocalDate().format(DATE_FMT));
+
+        return new ArchiveResultResponse(surveyInfo, Collections.emptyList(), totalRespondentCount, results);
+    }
+
+    // SURVEY-06 삭제
     @Transactional
     public SurveyDeleteResponse delete(Long userId, Long surveyId) {
         Survey survey = findSurveyOrThrow(surveyId);
@@ -235,6 +276,48 @@ public class SurveyService {
         return (int) survey.getQuestions().stream()
                 .filter(q -> q.getType() == type)
                 .count();
+    }
+
+    private ArchiveResultResponse.QuestionResultDto buildMcResult(Question q, Long surveyId,
+                                                                    long respondentCount) {
+        List<QuestionOption> options = q.getOptions().stream()
+                .sorted(Comparator.comparingInt(QuestionOption::getOptionOrder))
+                .toList();
+
+        List<ArchiveResultResponse.OptionResultDto> optionResults = options.stream().map(opt -> {
+            String jpql = "SELECT COUNT(ao) FROM AnswerOption ao " +
+                    "WHERE ao.option.id = :optionId " +
+                    "AND ao.answer.response.survey.id = :surveyId";
+            long count = em.createQuery(jpql, Long.class)
+                    .setParameter("optionId", opt.getId())
+                    .setParameter("surveyId", surveyId)
+                    .getSingleResult();
+
+            double percentage = respondentCount > 0
+                    ? Math.round(count * 1000.0 / respondentCount) / 10.0
+                    : 0.0;
+
+            return new ArchiveResultResponse.OptionResultDto(opt.getId(), opt.getContent(), count, percentage);
+        }).toList();
+
+        return new ArchiveResultResponse.QuestionResultDto(
+                q.getId(), q.getQuestionOrder(), q.getType().name(),
+                q.getContent(), optionResults, null);
+    }
+
+    private ArchiveResultResponse.QuestionResultDto buildSaResult(Question q, Long surveyId) {
+        String jpql = "SELECT a.answerText FROM Answer a " +
+                "WHERE a.question.id = :questionId " +
+                "AND a.response.survey.id = :surveyId " +
+                "AND a.answerText IS NOT NULL";
+        List<String> answers = em.createQuery(jpql, String.class)
+                .setParameter("questionId", q.getId())
+                .setParameter("surveyId", surveyId)
+                .getResultList();
+
+        return new ArchiveResultResponse.QuestionResultDto(
+                q.getId(), q.getQuestionOrder(), q.getType().name(),
+                q.getContent(), null, answers);
     }
 
 }
