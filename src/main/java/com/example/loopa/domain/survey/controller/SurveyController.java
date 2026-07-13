@@ -1,5 +1,6 @@
 package com.example.loopa.domain.survey.controller;
 
+import com.example.loopa.domain.archive.dto.response.ArchiveResultResponse;
 import com.example.loopa.domain.survey.dto.request.SurveyCreateRequest;
 import com.example.loopa.domain.survey.dto.response.*;
 import com.example.loopa.domain.survey.service.SurveyService;
@@ -47,6 +48,14 @@ public class SurveyController {
 
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success(surveyService.create(userId, request)));
+    }
+
+    @GetMapping("/{surveyId}/result")
+    public ResponseEntity<ApiResponse<ArchiveResultResponse>> getResult(
+            @AuthenticationPrincipal Long userId,
+            @PathVariable Long surveyId) {
+
+        return ResponseEntity.ok(ApiResponse.success(surveyService.getResult(userId, surveyId)));
     }
 
     @DeleteMapping("/{surveyId}")
